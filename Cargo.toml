@@ -1,0 +1,8 @@
+[package]
+name = "monkey"
+version = "0.1.0"
+authors = ["Paul Dix <paul@pauldix.net>"]
+description = "A rust implementation of Thorsten Ball's Monkey programming language."
+license = "MIT"
+
+[dependencies]
