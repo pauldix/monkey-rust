@@ -1,7 +1,7 @@
-use object::Object;
-use code::{Instructions, InstructionsFns, Op, make_instruction};
-use parser::parse;
-use ast;
+use crate::object::Object;
+use crate::code::{Instructions, InstructionsFns, Op, make_instruction};
+use crate::parser::parse;
+use crate::ast;
 use std::{error, fmt};
 use std::fmt::Display;
 
@@ -37,15 +37,15 @@ fn compile(node: ast::Node) -> Result {
     //Err(CompileError{message: "not implemented!".to_string()})
 }
 
-fn eval_program(prog: &ast::Program) -> Result {
+fn eval_program(_prog: &ast::Program) -> Result {
     Err(CompileError{message: "not implemented!".to_string()})
 }
 
-fn eval_statement(stmt: &ast::Statement) -> Result {
+fn eval_statement(_stmt: &ast::Statement) -> Result {
     Err(CompileError{message: "not implemented!".to_string()})
 }
 
-fn eval_expression(node: &ast::Expression) -> Result {
+fn eval_expression(_node: &ast::Expression) -> Result {
     Ok(Bytecode{instructions: vec![], constants: vec![]})
 }
 

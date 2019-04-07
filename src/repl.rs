@@ -1,9 +1,9 @@
 use std::io;
 use std::cell::RefCell;
 use std::rc::Rc;
-use parser;
-use evaluator;
-use object::Environment;
+use crate::parser;
+use crate::evaluator;
+use crate::object::Environment;
 
 pub fn start<R: io::BufRead, W: io::Write>(mut reader: R, mut writer: W) -> io::Result<()> {
     #![allow(warnings)]

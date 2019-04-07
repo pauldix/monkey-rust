@@ -1,5 +1,5 @@
-use token;
-use token::Token;
+use crate::token;
+use crate::token::Token;
 use std::iter::Peekable;
 use std::str::Chars;
 
@@ -142,7 +142,7 @@ fn is_letter(ch: char) -> bool {
 
 #[cfg(test)]
 mod test {
-    use token::Token;
+    use crate::token::Token;
     use super::*;
 
     #[test]

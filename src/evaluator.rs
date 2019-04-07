@@ -3,11 +3,11 @@ use std::fmt;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::collections::HashMap;
-use ast::*;
-use object;
-use object::{Object, Environment, Function, Builtin, Array, MonkeyHash};
-use token::Token;
-use parser;
+use crate::ast::*;
+use crate::object;
+use crate::object::{Object, Environment, Function, Builtin, Array, MonkeyHash};
+use crate::token::Token;
+use crate::parser;
 
 pub type EvalResult = Result<Rc<Object>, EvalError>;
 
@@ -310,7 +310,7 @@ fn eval_minus_prefix_operator_expression(right: Rc<Object>) -> EvalResult {
 #[cfg(test)]
 mod test {
     use super::*;
-    use object::Object;
+    use crate::object::Object;
 
     #[test]
     fn eval_integer_expression() {

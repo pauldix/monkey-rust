@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::hash::{Hash,Hasher};
 use std::cell::RefCell;
 use std::rc::Rc;
-use ast;
+use crate::ast;
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum Object {

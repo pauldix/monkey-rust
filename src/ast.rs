@@ -1,4 +1,4 @@
-use token;
+use crate::token;
 use std::fmt;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};

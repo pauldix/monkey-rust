@@ -1,7 +1,7 @@
-use ast::*;
+use crate::ast::*;
 use std::collections::HashMap;
-use token::Token;
-use lexer::Lexer;
+use crate::token::Token;
+use crate::lexer::Lexer;
 
 type ParseError = String;
 type ParseErrors = Vec<ParseError>;
@@ -445,7 +445,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use lexer::Lexer;
+    use crate::lexer::Lexer;
 
     #[test]
     fn let_statement() {
