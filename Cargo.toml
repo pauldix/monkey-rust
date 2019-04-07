@@ -6,3 +6,4 @@ description = "A rust implementation of Thorsten Ball's Monkey programming langu
 license = "MIT"
 
 [dependencies]
+byteorder = "1"
