@@ -1,4 +1,4 @@
-extern crate monkey;
+
 
 use monkey::repl;
 use std::io;

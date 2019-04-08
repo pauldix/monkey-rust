@@ -18,7 +18,7 @@ pub enum Statement {
 }
 
 impl fmt::Display for Statement {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Statement::Let(stmt) => format!("{}", stmt),
             Statement::Return(ret) => format!("{}", ret),
@@ -45,7 +45,7 @@ pub enum Expression {
 }
 
 impl fmt::Display for Expression {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Expression::Identifier(s) => s.clone(),
             Expression::Integer(value) => format!("{}", value),
@@ -78,7 +78,7 @@ impl Hash for HashLiteral {
 }
 
 impl fmt::Display for HashLiteral {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let pairs: Vec<String> = (&self.pairs).into_iter().map(|(k, v)| format!("{}:{}", k.to_string(), v.to_string())).collect();
         write!(f, "{{{}}}", pairs.join(", "))
     }
@@ -92,7 +92,7 @@ pub struct IfExpression {
 }
 
 impl fmt::Display for IfExpression {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "if {} {}", self.condition, self.consequence)?;
 
         if let Some(ref stmt) = self.alternative {
@@ -108,7 +108,7 @@ pub struct ArrayLiteral {
 }
 
 impl fmt::Display for ArrayLiteral {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let elements: Vec<String> = (&self.elements).into_iter().map(|e| e.to_string()).collect();
         write!(f, "[{}]", elements.join(", "))
     }
@@ -121,7 +121,7 @@ pub struct IndexExpression {
 }
 
 impl fmt::Display for IndexExpression {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({}[{}])", self.left.to_string(), self.index.to_string())
     }
 }
@@ -132,7 +132,7 @@ pub struct BlockStatement {
 }
 
 impl fmt::Display for BlockStatement {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         for stmt in &self.statements {
             write!(f, "{}", stmt)?;
         }
@@ -147,7 +147,7 @@ pub struct FunctionLiteral {
 }
 
 impl fmt::Display for FunctionLiteral {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let param_list: Vec<String> = (&self.parameters).into_iter().map(|p| p.to_string()).collect();
         write!(f, "({}) {}", param_list.join(", "), self.body)
     }
@@ -160,7 +160,7 @@ pub struct CallExpression {
 }
 
 impl fmt::Display for CallExpression {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let arg_list: Vec<String> = (&self.arguments).into_iter().map(|exp| exp.to_string()).collect();
         write!(f, "{}({})", self.function.to_string(), arg_list.join(", "))
     }
@@ -172,7 +172,7 @@ pub struct IdentifierExpression {
 }
 
 impl fmt::Display for IdentifierExpression {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.name)
     }
 }
@@ -184,7 +184,7 @@ pub struct PrefixExpression {
 }
 
 impl fmt::Display for PrefixExpression {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({}{})", self.operator, self.right)
     }
 }
@@ -197,7 +197,7 @@ pub struct InfixExpression {
 }
 
 impl fmt::Display for InfixExpression {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({} {} {})", self.left, self.operator, self.right)
     }
 }
@@ -208,7 +208,7 @@ pub struct IntegerLiteral {
 }
 
 impl fmt::Display for IntegerLiteral {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.value)
     }
 }
@@ -220,7 +220,7 @@ pub struct LetStatement {
 }
 
 impl fmt::Display for LetStatement {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "let {} = {};", self.name, self.value)
     }
 }
@@ -231,7 +231,7 @@ pub struct ReturnStatement {
 }
 
 impl fmt::Display for ReturnStatement {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "return {};", self.value)
     }
 }
@@ -242,7 +242,7 @@ pub struct ExpressionStatement {
 }
 
 impl fmt::Display for ExpressionStatement {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.expression)
     }
 }
@@ -261,7 +261,7 @@ impl Program {
 }
 
 impl fmt::Display for Program {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let statements: Vec<String> = (&self.statements).into_iter().map(|stmt| stmt.to_string()).collect();
         write!(f, "{}", statements.join(""))
     }

@@ -10,6 +10,24 @@ struct Bytecode {
     constants: Vec<Object>,
 }
 
+impl Bytecode {
+    fn emit(&mut self, op: Op, operands: &Vec<usize>) -> usize {
+        let mut ins = make_instruction(op, operands);
+        return self.add_instruction(&mut ins);
+    }
+
+    fn add_instruction(&mut self, ins: &Vec<u8>) -> usize {
+        let pos = self.instructions.len();
+        self.instructions.extend_from_slice(ins);
+        return pos;
+    }
+
+    fn add_constant(&mut self, obj: Object) -> usize {
+        self.constants.push(obj);
+        return self.constants.len() - 1;
+    }
+}
+
 type Result = ::std::result::Result<Bytecode, CompileError>;
 
 #[derive(Debug)]
@@ -22,31 +40,54 @@ impl error::Error for CompileError {
 }
 
 impl Display for CompileError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "CompileError: {}", &self.message)
     }
 }
 
 fn compile(node: ast::Node) -> Result {
+    let mut bytecode = Bytecode{instructions: vec![], constants: vec![]};
+
     match node {
-        ast::Node::Program(prog) => eval_program(&prog),
-        ast::Node::Statement(stmt) => eval_statement(&stmt),
-        ast::Node::Expression(exp) => eval_expression(&exp),
+        ast::Node::Program(prog) => eval_program(&prog, &mut bytecode)?,
+        ast::Node::Statement(stmt) => eval_statement(&stmt, &mut bytecode)?,
+        ast::Node::Expression(exp) => eval_expression(&exp, &mut bytecode)?,
     }
-//    Ok(Bytecode{instructions: vec![], constants: vec![]})
-    //Err(CompileError{message: "not implemented!".to_string()})
+
+    Ok(bytecode)
 }
 
-fn eval_program(_prog: &ast::Program) -> Result {
-    Err(CompileError{message: "not implemented!".to_string()})
+fn eval_program(prog: &ast::Program, bytecode: &mut Bytecode) -> ::std::result::Result<(), CompileError> {
+    for stmt in &prog.statements {
+        eval_statement(stmt, bytecode)?
+    }
+
+    Ok(())
 }
 
-fn eval_statement(_stmt: &ast::Statement) -> Result {
-    Err(CompileError{message: "not implemented!".to_string()})
+fn eval_statement(stmt: &ast::Statement, bytecode: &mut Bytecode) -> ::std::result::Result<(), CompileError> {
+    match stmt {
+        ast::Statement::Expression(exp) => eval_expression(&exp.expression, bytecode),
+        ast::Statement::Return(ret) => panic!("not implemented"),
+        ast::Statement::Let(stmt) => panic!("not implemented"),
+    }
 }
 
-fn eval_expression(_node: &ast::Expression) -> Result {
-    Ok(Bytecode{instructions: vec![], constants: vec![]})
+fn eval_expression(exp: &ast::Expression, bytecode: &mut Bytecode) -> ::std::result::Result<(), CompileError> {
+    match exp {
+        ast::Expression::Integer(int) => {
+            let int = Object::Int(*int);
+            let operands = vec![bytecode.add_constant(int)];
+            bytecode.emit(Op::Constant, &operands);
+        },
+        ast::Expression::Infix(exp) => {
+            eval_expression(&exp.left, bytecode);
+            eval_expression(&exp.right, bytecode);
+        },
+        _ => panic!("not implemented")
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -75,7 +116,7 @@ mod test {
         run_compiler_tests(tests)
     }
 
-    fn run_compiler_tests(tests: Vec<CompilerTestCase>) {
+    fn run_compiler_tests(tests: Vec<CompilerTestCase<'_>>) {
         for t in tests {
             let program = parse(t.input).unwrap();
             let bytecode = compile(program).unwrap_or_else(
@@ -94,15 +135,15 @@ mod test {
     fn test_instructions(expected: &Vec<Instructions>, actual: Instructions) -> ::std::result::Result<(), CompileError> {
         let concatted = concat_instructions(expected);
 
-        if concatted.len() != expected.len() {
-            return Err(CompileError{message: format!("instruction lengths not equal\n\texp: {}\n\tgot: {}", concatted.string(), actual.string())})
+        if concatted.len() != actual.len() {
+            return Err(CompileError{message: format!("instruction lengths not equal\n\texp:\n{:?}\n\tgot:\n{:?}", concatted.string(), actual.string())})
         }
 
         let mut pos = 0;
 
         for (exp, got) in concatted.into_iter().zip(actual) {
             if exp != got {
-                return Err(CompileError { message: format!("exp {} but got {} at position {}", exp, got, pos) });
+                return Err(CompileError { message: format!("exp\n{:?} but got\n{} at position {:?}", exp, got, pos) });
             }
             pos = pos + 1;
         }

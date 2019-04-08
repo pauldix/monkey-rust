@@ -34,7 +34,7 @@ impl Object {
     }
 }
 impl fmt::Display for Object {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.inspect())
     }
 }

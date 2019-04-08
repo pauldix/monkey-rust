@@ -1,4 +1,4 @@
-extern crate byteorder;
+use byteorder;
 
 use std::io::Cursor;
 use self::byteorder::{ByteOrder, BigEndian, WriteBytesExt, ReadBytesExt};
@@ -7,7 +7,7 @@ pub type Instructions = Vec<u8>;
 
 pub trait InstructionsFns {
     fn string(&self) -> String;
-    fn fmt_instruction(op: &Op, operands: &Vec<i32>) -> String;
+    fn fmt_instruction(op: &Op, operands: &Vec<usize>) -> String;
 }
 
 impl InstructionsFns for Instructions {
@@ -28,7 +28,7 @@ impl InstructionsFns for Instructions {
         ret
     }
 
-    fn fmt_instruction(op: &Op, operands: &Vec<i32>) -> String {
+    fn fmt_instruction(op: &Op, operands: &Vec<usize>) -> String {
         match op.operand_widths().len() {
             1 => format!("{} {}", op.name(), operands.first().unwrap()),
             _ => panic!("unsuported operand width")
@@ -38,6 +38,7 @@ impl InstructionsFns for Instructions {
 
 
 #[repr(u8)]
+#[derive(Debug)]
 pub enum Op {
     Constant,
 }
@@ -60,7 +61,7 @@ impl Op {
 //    }
 }
 
-pub fn make_instruction(op: Op, operands: &Vec<i32>) -> Vec<u8> {
+pub fn make_instruction(op: Op, operands: &Vec<usize>) -> Vec<u8> {
 //    let widths = op.operand_widths();
 //    let instruction_len = widths.into_iter().fold(1, |acc, x| acc + x as usize);
 //    let mut instruction = Vec::with_capacity(*instruction_len);
@@ -80,14 +81,14 @@ pub fn make_instruction(op: Op, operands: &Vec<i32>) -> Vec<u8> {
     instruction
 }
 
-pub fn read_operands(op: &Op, instructions: &[u8]) -> (Vec<i32>, usize) {
+pub fn read_operands(op: &Op, instructions: &[u8]) -> (Vec<usize>, usize) {
     let mut operands = Vec::with_capacity(op.operand_widths().len());
     let mut offset = 0;
 
     for width in op.operand_widths() {
         match width {
             2 => {
-                operands.push(BigEndian::read_u16(&instructions[offset..offset+2]) as i32);
+                operands.push(BigEndian::read_u16(&instructions[offset..offset+2]) as usize);
                 offset = offset + 2;
             },
             _ => panic!("width not supported for operand")
@@ -105,7 +106,7 @@ mod test {
     fn make() {
         struct Test {
             op: Op,
-            operands: Vec<i32>,
+            operands: Vec<usize>,
             expected: Vec<u8>,
         }
 
@@ -136,7 +137,7 @@ mod test {
     fn test_read_operands() {
         struct Test {
             op: Op,
-            operands: Vec<i32>,
+            operands: Vec<usize>,
             bytes_read: usize,
         }
 

@@ -46,7 +46,7 @@ pub enum Token {
 }
 
 impl fmt::Display for Token {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Token::Ident(name) => write!(f, "{}", name),
             Token::Int(val) => write!(f, "{}", val),

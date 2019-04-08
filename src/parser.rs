@@ -6,8 +6,8 @@ use crate::lexer::Lexer;
 type ParseError = String;
 type ParseErrors = Vec<ParseError>;
 pub type ParseResult<T> = Result<T, ParseError>;
-type PrefixFn = fn(parser: &mut Parser) -> ParseResult<Expression>;
-type InfixFn = fn(parser: &mut Parser, left: Expression) -> ParseResult<Expression>;
+type PrefixFn = fn(parser: &mut Parser<'_>) -> ParseResult<Expression>;
+type InfixFn = fn(parser: &mut Parser<'_>, left: Expression) -> ParseResult<Expression>;
 
 #[derive(PartialEq, PartialOrd)]
 enum Precedence {
@@ -55,7 +55,7 @@ pub fn parse(input: &str) -> Result<Node, ParseErrors> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(l: Lexer) -> Parser {
+    pub fn new(l: Lexer<'_>) -> Parser<'_> {
         let mut l = l;
         let cur = l.next_token();
         let next = l.next_token();
@@ -143,7 +143,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_hash_literal(parser: &mut Parser) -> ParseResult<Expression> {
+    fn parse_hash_literal(parser: &mut Parser<'_>) -> ParseResult<Expression> {
         let mut pairs: HashMap<Expression,Expression> = HashMap::new();
 
         while !parser.peek_token_is(&Token::Rbrace) {
@@ -166,7 +166,7 @@ impl<'a> Parser<'a> {
         Ok(Expression::Hash(Box::new(HashLiteral{pairs})))
     }
 
-    fn parse_array_literal(parser: &mut Parser) -> ParseResult<Expression> {
+    fn parse_array_literal(parser: &mut Parser<'_>) -> ParseResult<Expression> {
         let elements = parser.parse_expression_list(Token::Rbracket)?;
         Ok(Expression::Array(Box::new(ArrayLiteral{elements})))
     }
@@ -193,7 +193,7 @@ impl<'a> Parser<'a> {
         Ok(list)
     }
 
-    fn parse_prefix_expression(parser: &mut Parser) -> ParseResult<Expression> {
+    fn parse_prefix_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
         let operator = parser.cur_token.clone();
 
         parser.next_token();
@@ -203,7 +203,7 @@ impl<'a> Parser<'a> {
         Ok(Expression::Prefix(Box::new(PrefixExpression { operator, right })))
     }
 
-    fn parse_if_expression(parser: &mut Parser) -> ParseResult<Expression> {
+    fn parse_if_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
         parser.expect_peek(Token::Lparen)?;
         parser.next_token();
 
@@ -243,7 +243,7 @@ impl<'a> Parser<'a> {
         Ok(BlockStatement { statements })
     }
 
-    fn parse_function_literal(parser: &mut Parser) -> ParseResult<Expression> {
+    fn parse_function_literal(parser: &mut Parser<'_>) -> ParseResult<Expression> {
         parser.expect_peek(Token::Lparen)?;
 
         let parameters = parser.parse_function_parameters()?;
@@ -278,7 +278,7 @@ impl<'a> Parser<'a> {
         Ok(identifiers)
     }
 
-    fn parse_grouped_expression(parser: &mut Parser) -> ParseResult<Expression> {
+    fn parse_grouped_expression(parser: &mut Parser<'_>) -> ParseResult<Expression> {
         parser.next_token();
 
         let exp = parser.parse_expression(Precedence::Lowest);
@@ -297,7 +297,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_index_expression(parser: &mut Parser, left: Expression) -> ParseResult<Expression> {
+    fn parse_index_expression(parser: &mut Parser<'_>, left: Expression) -> ParseResult<Expression> {
         parser.next_token();
 
         let exp = IndexExpression{left, index: parser.parse_expression(Precedence::Lowest)?};
@@ -307,12 +307,12 @@ impl<'a> Parser<'a> {
         Ok(Expression::Index(Box::new(exp)))
     }
 
-    fn parse_call_expression(parser: &mut Parser, function: Expression) -> ParseResult<Expression> {
+    fn parse_call_expression(parser: &mut Parser<'_>, function: Expression) -> ParseResult<Expression> {
         let arguments = parser.parse_expression_list(Token::Rparen)?;
         Ok(Expression::Call(Box::new(CallExpression{function, arguments})))
     }
 
-    fn parse_infix_expression(parser: &mut Parser, left: Expression) -> ParseResult<Expression> {
+    fn parse_infix_expression(parser: &mut Parser<'_>, left: Expression) -> ParseResult<Expression> {
         let operator = parser.cur_token.clone();
         let precedence = parser.cur_precedence();
 
@@ -323,7 +323,7 @@ impl<'a> Parser<'a> {
         Ok(Expression::Infix(Box::new(InfixExpression { operator, left, right })))
     }
 
-    fn parse_boolean(parser: &mut Parser) -> ParseResult<Expression> {
+    fn parse_boolean(parser: &mut Parser<'_>) -> ParseResult<Expression> {
         match parser.cur_token {
             Token::True => Ok(Expression::Boolean(true)),
             Token::False => Ok(Expression::Boolean(false)),
@@ -340,7 +340,7 @@ impl<'a> Parser<'a> {
         Err(format!("unexpected error on identifier parse with {}", self.cur_token))
     }
 
-    fn parse_identifier(parser: &mut Parser) -> ParseResult<Expression> {
+    fn parse_identifier(parser: &mut Parser<'_>) -> ParseResult<Expression> {
         if let Token::Ident(ref name) = parser.cur_token {
             return Ok(Expression::Identifier(name.to_string()));
         }
@@ -348,7 +348,7 @@ impl<'a> Parser<'a> {
         Err(format!("unexpected error on identifier parse with {}", parser.cur_token))
     }
 
-    fn parse_string_literal(parser: &mut Parser) -> ParseResult<Expression> {
+    fn parse_string_literal(parser: &mut Parser<'_>) -> ParseResult<Expression> {
         if let Token::String(ref s) = parser.cur_token {
             return Ok(Expression::String(s.to_string()));
         }
@@ -356,7 +356,7 @@ impl<'a> Parser<'a> {
         Err(format!("unexpected error on string parse with {}", parser.cur_token))
     }
 
-    fn parse_integer_literal(parser: &mut Parser) -> ParseResult<Expression> {
+    fn parse_integer_literal(parser: &mut Parser<'_>) -> ParseResult<Expression> {
         if let Token::Int(value) = parser.cur_token {
             return Ok(Expression::Integer(value));
         }

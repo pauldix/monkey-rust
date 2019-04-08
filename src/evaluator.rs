@@ -17,7 +17,7 @@ pub struct EvalError {
 }
 
 impl fmt::Display for EvalError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.message)
     }
 }
@@ -142,7 +142,7 @@ fn eval_identifier(ident: &str, env: Rc<RefCell<Environment>>) -> EvalResult {
 fn apply_function(func: &Object, args: &Vec<Rc<Object>>) -> EvalResult {
     match func {
         Object::Function(f) => {
-            let mut extended_env = extend_function_env(f, args);
+            let extended_env = extend_function_env(f, args);
             let evaluated = eval_block(&f.body, extended_env)?;
             Ok(unwrap_return_value(evaluated))
         },
@@ -474,7 +474,7 @@ mod test {
         ];
 
         for t in tests {
-            let mut env = Rc::new(RefCell::new(Environment::new()));
+            let env = Rc::new(RefCell::new(Environment::new()));
             match parser::parse(t.input) {
                 Ok(node) => {
                     match eval(&node, env) {
