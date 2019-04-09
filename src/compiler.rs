@@ -4,10 +4,12 @@ use crate::parser::parse;
 use crate::ast;
 use std::{error, fmt};
 use std::fmt::Display;
+use std::rc::Rc;
+use std::borrow::Borrow;
 
-struct Bytecode {
-    instructions: Instructions,
-    constants: Vec<Object>,
+pub struct Bytecode {
+    pub instructions: Instructions,
+    pub constants: Vec<Rc<Object>>,
 }
 
 impl Bytecode {
@@ -23,7 +25,7 @@ impl Bytecode {
     }
 
     fn add_constant(&mut self, obj: Object) -> usize {
-        self.constants.push(obj);
+        self.constants.push(Rc::new(obj));
         return self.constants.len() - 1;
     }
 }
@@ -31,7 +33,7 @@ impl Bytecode {
 type Result = ::std::result::Result<Bytecode, CompileError>;
 
 #[derive(Debug)]
-struct CompileError {
+pub struct CompileError {
   message: String,
 }
 
@@ -45,7 +47,7 @@ impl Display for CompileError {
     }
 }
 
-fn compile(node: ast::Node) -> Result {
+pub fn compile(node: ast::Node) -> Result {
     let mut bytecode = Bytecode{instructions: vec![], constants: vec![]};
 
     match node {
@@ -116,7 +118,7 @@ mod test {
         run_compiler_tests(tests)
     }
 
-    fn run_compiler_tests(tests: Vec<CompilerTestCase<'_>>) {
+    fn run_compiler_tests(tests: Vec<CompilerTestCase>) {
         for t in tests {
             let program = parse(t.input).unwrap();
             let bytecode = compile(program).unwrap_or_else(
@@ -150,11 +152,12 @@ mod test {
         Ok(())
     }
 
-    fn test_constants(expected: &Vec<Object>, actual: Vec<Object>) -> ::std::result::Result<(), CompileError> {
+    fn test_constants(expected: &Vec<Object>, actual: Vec<Rc<Object>>) -> ::std::result::Result<(), CompileError> {
         let mut pos = 0;
 
         for (exp, got) in expected.into_iter().zip(actual) {
-            match (exp, &got) {
+            let got = got.borrow();
+            match (exp, got) {
                 (Object::Int(exp), Object::Int(got)) => if *exp != *got {
                     return Err(CompileError{message: format!("constant {}, exp: {} got: {}", pos, exp, got)})
                 },
