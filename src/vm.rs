@@ -18,8 +18,20 @@ pub struct VM {
 }
 
 impl VM {
-    pub fn stack_top(&self, ) -> Option<Rc<Object>> {
-        match self.stack.last() {
+    pub fn new(constants: Vec<Rc<Object>>, instructions: Instructions) -> VM {
+        let mut stack = Vec::with_capacity(STACK_SIZE);
+        stack.resize(STACK_SIZE, Rc::new(Object::Null));
+
+        VM{
+            constants,
+            instructions,
+            stack,
+            sp: 0,
+        }
+    }
+
+    pub fn last_popped_stack_elem(&self, ) -> Option<Rc<Object>> {
+        match self.stack.get(self.sp) {
             Some(o) => Some(Rc::clone(o)),
             None => None,
         }
@@ -50,7 +62,11 @@ impl VM {
                         },
                         _ => panic!("unable to add {:?} and {:?}", right, left),
                     }
-                }
+                },
+                Op::Pop => {
+                    self.pop();
+                    ()
+                },
                 _ => panic!("unsupported op {:?}", op),
             }
 
@@ -63,13 +79,13 @@ impl VM {
             panic!("stack overflow")
         }
 
-        self.stack.push(o);
+        self.stack[self.sp] = o;
         self.sp += 1;
     }
 
     fn pop(&mut self) -> Rc<Object> {
         self.sp -= 1;
-        return self.stack.pop().unwrap();
+        Rc::clone(&self.stack[self.sp])
     }
 }
 
@@ -99,17 +115,19 @@ mod test {
             let program = parse(t.input).unwrap();
             let bytecode = compile(program).unwrap();
 
-            let mut vm = VM{
-                constants:bytecode.constants,
-                instructions: bytecode.instructions,
-                stack: vec![],
-                sp: 0,
-            };
+            use crate::code::InstructionsFns;
+            println!("{}", bytecode.instructions.string());
+
+            let mut vm = VM::new(bytecode.constants, bytecode.instructions);
 
             vm.run();
 
-
-            test_object(&t.expected, vm.stack_top().unwrap().borrow());
+            let got = vm.last_popped_stack_elem();
+            match &got {
+                Some(o) => println!("we're good {:?}", o),
+                None => println!("not here for {:?}", t.expected),
+            }
+            test_object(&t.expected, got.unwrap().borrow());
         }
     }
 

@@ -43,6 +43,7 @@ impl InstructionsFns for Instructions {
 pub enum Op {
     Constant,
     Add,
+    Pop,
 }
 
 impl Op {
@@ -50,13 +51,14 @@ impl Op {
         match self {
             Op::Constant => "OpConstant",
             Op::Add => "OpAdd",
+            Op::Pop => "OpPop",
         }
     }
 
     pub fn operand_widths(&self) -> Vec<u8> {
         match self {
             Op::Constant => vec![2],
-            Op::Add => vec![],
+            Op::Add | Op::Pop => vec![],
         }
     }
 }

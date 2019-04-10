@@ -15,14 +15,9 @@ pub fn start<R: io::BufRead, W: io::Write>(mut reader: R, mut writer: W) -> io::
             Ok(node) => {
                 match compile(node) {
                     Ok(bytecode) => {
-                        let mut vm = vm::VM{
-                            constants: bytecode.constants,
-                            instructions: bytecode.instructions,
-                            stack: vec![],
-                            sp: 0,
-                        };
+                        let mut vm = vm::VM::new(bytecode.constants, bytecode.instructions);
                         vm.run();
-                        write!(writer, "{:?}\n", vm.stack_top().unwrap().inspect());
+                        write!(writer, "{:?}\n", vm.last_popped_stack_elem().unwrap().inspect());
                     },
                     Err(e) => {
                         write!(writer, "error: {}\n", e.message);

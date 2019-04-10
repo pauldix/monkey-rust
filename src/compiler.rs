@@ -70,10 +70,15 @@ fn eval_program(prog: &ast::Program, bytecode: &mut Bytecode) -> ::std::result::
 
 fn eval_statement(stmt: &ast::Statement, bytecode: &mut Bytecode) -> ::std::result::Result<(), CompileError> {
     match stmt {
-        ast::Statement::Expression(exp) => eval_expression(&exp.expression, bytecode),
+        ast::Statement::Expression(exp) => {
+            eval_expression(&exp.expression, bytecode)?;
+            // expressions put their value on the stack so this should be popped off since it doesn't get reused
+            bytecode.emit(Op::Pop, &vec![]);
+        },
         ast::Statement::Return(ret) => panic!("not implemented"),
         ast::Statement::Let(stmt) => panic!("not implemented"),
     }
+    Ok(())
 }
 
 fn eval_expression(exp: &ast::Expression, bytecode: &mut Bytecode) -> ::std::result::Result<(), CompileError> {
@@ -118,6 +123,17 @@ mod test {
                     make_instruction(Op::Constant, &vec![0]),
                     make_instruction(Op::Constant, &vec![1]),
                     make_instruction(Op::Add, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input:"1; 2",
+                expected_constants: vec![Object::Int(1), Object::Int(2)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Pop, &vec![]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Pop, &vec![]),
                 ],
             },
         ];
