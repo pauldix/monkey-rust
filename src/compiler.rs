@@ -35,7 +35,7 @@ type Result = ::std::result::Result<Bytecode, CompileError>;
 
 #[derive(Debug)]
 pub struct CompileError {
-  message: String,
+  pub message: String,
 }
 
 impl error::Error for CompileError {

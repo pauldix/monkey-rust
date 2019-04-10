@@ -9,23 +9,23 @@ use std::borrow::Borrow;
 
 const STACK_SIZE: usize = 2048;
 
-struct VM {
-    constants: Vec<Rc<Object>>,
-    instructions: Instructions,
+pub struct VM {
+    pub constants: Vec<Rc<Object>>,
+    pub instructions: Instructions,
 
-    stack: Vec<Rc<Object>>,
-    sp: usize,
+    pub stack: Vec<Rc<Object>>,
+    pub sp: usize,
 }
 
 impl VM {
-    fn stack_top(&self, ) -> Option<Rc<Object>> {
+    pub fn stack_top(&self, ) -> Option<Rc<Object>> {
         match self.stack.last() {
             Some(o) => Some(Rc::clone(o)),
             None => None,
         }
     }
 
-    fn run(&mut self) {
+    pub fn run(&mut self) {
         let mut ip = 0;
 
         while ip < self.instructions.len() {
