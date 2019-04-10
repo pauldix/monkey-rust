@@ -2,6 +2,7 @@ use crate::object::Object;
 use crate::code::{Instructions, InstructionsFns, Op, make_instruction};
 use crate::parser::parse;
 use crate::ast;
+use crate::token::Token;
 use std::{error, fmt};
 use std::fmt::Display;
 use std::rc::Rc;
@@ -85,6 +86,11 @@ fn eval_expression(exp: &ast::Expression, bytecode: &mut Bytecode) -> ::std::res
         ast::Expression::Infix(exp) => {
             eval_expression(&exp.left, bytecode);
             eval_expression(&exp.right, bytecode);
+
+            match exp.operator {
+                Token::Plus => bytecode.emit(Op::Add, &vec![]),
+                _ => return Err(CompileError{message: format!("unknown operator {:?}", exp.operator)}),
+            };
         },
         _ => panic!("not implemented")
     }
@@ -110,7 +116,8 @@ mod test {
                 expected_constants: vec![Object::Int(1), Object::Int(2)],
                 expected_instructions: vec![
                     make_instruction(Op::Constant, &vec![0]),
-                    make_instruction(Op::Constant, &vec![1])
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Add, &vec![]),
                 ],
             },
         ];

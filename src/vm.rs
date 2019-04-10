@@ -39,6 +39,18 @@ impl VM {
                     let c = Rc::clone(self.constants.get(const_index).unwrap());
                     self.push(c)
                 },
+                Op::Add => {
+                    let right = self.pop();
+                    let left = self.pop();
+
+                    match (right.borrow(), left.borrow()) {
+                        (Object::Int(right), Object::Int(left)) => {
+                            let result = right + left;
+                            self.push(Rc::new(Object::Int(result)));
+                        },
+                        _ => panic!("unable to add {:?} and {:?}", right, left),
+                    }
+                }
                 _ => panic!("unsupported op {:?}", op),
             }
 
@@ -53,6 +65,11 @@ impl VM {
 
         self.stack.push(o);
         self.sp += 1;
+    }
+
+    fn pop(&mut self) -> Rc<Object> {
+        self.sp -= 1;
+        return self.stack.pop().unwrap();
     }
 }
 
@@ -71,7 +88,7 @@ mod test {
         let tests = vec![
             VMTestCase{input: "1", expected: Object::Int(1)},
             VMTestCase{input: "2", expected: Object::Int(2)},
-            VMTestCase{input: "1 + 2", expected: Object::Int(2)}, // FIXME
+            VMTestCase{input: "1 + 2", expected: Object::Int(3)},
         ];
 
         run_vm_tests(tests);

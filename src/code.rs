@@ -31,6 +31,7 @@ impl InstructionsFns for Instructions {
     fn fmt_instruction(op: &Op, operands: &Vec<usize>) -> String {
         match op.operand_widths().len() {
             1 => format!("{} {}", op.name(), operands.first().unwrap()),
+            0 => format!("{}", op.name()),
             _ => panic!("unsuported operand width")
         }
     }
@@ -41,30 +42,26 @@ impl InstructionsFns for Instructions {
 #[derive(Debug)]
 pub enum Op {
     Constant,
+    Add,
 }
 
 impl Op {
     pub fn name(&self) -> &str {
         match self {
             Op::Constant => "OpConstant",
+            Op::Add => "OpAdd",
         }
     }
 
     pub fn operand_widths(&self) -> Vec<u8> {
         match self {
             Op::Constant => vec![2],
+            Op::Add => vec![],
         }
     }
-
-//    pub fn code(&self) -> i32 {
-//        *self as i32
-//    }
 }
 
 pub fn make_instruction(op: Op, operands: &Vec<usize>) -> Vec<u8> {
-//    let widths = op.operand_widths();
-//    let instruction_len = widths.into_iter().fold(1, |acc, x| acc + x as usize);
-//    let mut instruction = Vec::with_capacity(*instruction_len);
     let mut instruction = Vec::new();
     let widths = op.operand_widths();
     instruction.push(op as u8);
@@ -74,7 +71,7 @@ pub fn make_instruction(op: Op, operands: &Vec<usize>) -> Vec<u8> {
             2 => {
                 instruction.write_u16::<BigEndian>(*o as u16).unwrap()
             },
-            _ => panic!("unsupported operand width"),
+            _ => panic!("unsupported operand width {}", width),
         };
     }
 
@@ -111,7 +108,8 @@ mod test {
         }
 
         let tests = vec![
-            Test{op: Op::Constant, operands: vec![65534], expected: vec![Op::Constant as u8, 255, 254]}
+            Test{op: Op::Constant, operands: vec![65534], expected: vec![Op::Constant as u8, 255, 254]},
+            Test{op: Op::Add, operands: vec![], expected: vec![Op::Add as u8]},
         ];
 
         for t in tests {
@@ -123,11 +121,11 @@ mod test {
     #[test]
     fn instructions_string() {
         let instructions = vec![
-            make_instruction(Op::Constant, &vec![1]),
+            make_instruction(Op::Add, &vec![]),
             make_instruction(Op::Constant, &vec![2]),
             make_instruction(Op::Constant, &vec![65535]),
         ];
-        let expected = "0000 OpConstant 1\n0003 OpConstant 2\n0006 OpConstant 65535\n";
+        let expected = "0000 OpAdd\n0001 OpConstant 2\n0004 OpConstant 65535\n";
         let concatted = instructions.into_iter().flatten().collect::<Instructions>();
 
         assert_eq!(expected, concatted.string())
