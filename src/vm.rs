@@ -51,18 +51,7 @@ impl VM {
                     let c = Rc::clone(self.constants.get(const_index).unwrap());
                     self.push(c)
                 },
-                Op::Add => {
-                    let right = self.pop();
-                    let left = self.pop();
-
-                    match (right.borrow(), left.borrow()) {
-                        (Object::Int(right), Object::Int(left)) => {
-                            let result = right + left;
-                            self.push(Rc::new(Object::Int(result)));
-                        },
-                        _ => panic!("unable to add {:?} and {:?}", right, left),
-                    }
-                },
+                Op::Add | Op::Sub | Op::Mul | Op::Div => self.execute_binary_operation(op),
                 Op::Pop => {
                     self.pop();
                     ()
@@ -71,6 +60,26 @@ impl VM {
             }
 
             ip += 1;
+        }
+    }
+
+    fn execute_binary_operation(&mut self, op: Op) {
+        let right = self.pop();
+        let left = self.pop();
+
+        match (right.borrow(), left.borrow()) {
+            (Object::Int(right), Object::Int(left)) => {
+                let result = match op {
+                    Op::Add => left + right,
+                    Op::Sub => left - right,
+                    Op::Mul => left * right,
+                    Op::Div => left / right,
+                    _ => panic!("unsupported operator in binary operation {:?}", op)
+                };
+
+                self.push(Rc::new(Object::Int(result)));
+            },
+            _ => panic!("unable to {:?} {:?} and {:?}", op, right, left),
         }
     }
 
@@ -105,6 +114,16 @@ mod test {
             VMTestCase{input: "1", expected: Object::Int(1)},
             VMTestCase{input: "2", expected: Object::Int(2)},
             VMTestCase{input: "1 + 2", expected: Object::Int(3)},
+            VMTestCase{input: "1 - 2", expected: Object::Int(-1)},
+            VMTestCase{input: "1 * 2", expected: Object::Int(2)},
+            VMTestCase{input: "4 / 2", expected: Object::Int(2)},
+            VMTestCase{input: "50 / 2 * 2 + 10 - 5", expected: Object::Int(55)},
+            VMTestCase{input: "5 * (2 + 10)", expected: Object::Int(60)},
+            VMTestCase{input: "5 + 5 + 5 + 5 - 10", expected: Object::Int(10)},
+            VMTestCase{input: "2 * 2 * 2 * 2 * 2", expected: Object::Int(32)},
+            VMTestCase{input: "5 * 2 + 10", expected: Object::Int(20)},
+            VMTestCase{input: "5 + 2 * 10", expected: Object::Int(25)},
+            VMTestCase{input: "5 * (2 + 10)", expected: Object::Int(60)},
         ];
 
         run_vm_tests(tests);
@@ -115,18 +134,11 @@ mod test {
             let program = parse(t.input).unwrap();
             let bytecode = compile(program).unwrap();
 
-            use crate::code::InstructionsFns;
-            println!("{}", bytecode.instructions.string());
-
             let mut vm = VM::new(bytecode.constants, bytecode.instructions);
 
             vm.run();
 
             let got = vm.last_popped_stack_elem();
-            match &got {
-                Some(o) => println!("we're good {:?}", o),
-                None => println!("not here for {:?}", t.expected),
-            }
             test_object(&t.expected, got.unwrap().borrow());
         }
     }

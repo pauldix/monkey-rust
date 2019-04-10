@@ -94,6 +94,9 @@ fn eval_expression(exp: &ast::Expression, bytecode: &mut Bytecode) -> ::std::res
 
             match exp.operator {
                 Token::Plus => bytecode.emit(Op::Add, &vec![]),
+                Token::Minus => bytecode.emit(Op::Sub, &vec![]),
+                Token::Asterisk => bytecode.emit(Op::Mul, &vec![]),
+                Token::Slash => bytecode.emit(Op::Div, &vec![]),
                 _ => return Err(CompileError{message: format!("unknown operator {:?}", exp.operator)}),
             };
         },
@@ -133,6 +136,36 @@ mod test {
                     make_instruction(Op::Constant, &vec![0]),
                     make_instruction(Op::Pop, &vec![]),
                     make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "1 - 2",
+                expected_constants: vec![Object::Int(1), Object::Int(2)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Sub, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "1 * 2",
+                expected_constants: vec![Object::Int(1), Object::Int(2)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Mul, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "2 / 1",
+                expected_constants: vec![Object::Int(2), Object::Int(1)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Div, &vec![]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
             },

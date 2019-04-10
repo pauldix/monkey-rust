@@ -43,6 +43,9 @@ impl InstructionsFns for Instructions {
 pub enum Op {
     Constant,
     Add,
+    Sub,
+    Mul,
+    Div,
     Pop,
 }
 
@@ -51,6 +54,9 @@ impl Op {
         match self {
             Op::Constant => "OpConstant",
             Op::Add => "OpAdd",
+            Op::Sub => "OpSub",
+            Op::Mul => "OpMul",
+            Op::Div => "OpDiv",
             Op::Pop => "OpPop",
         }
     }
@@ -58,7 +64,7 @@ impl Op {
     pub fn operand_widths(&self) -> Vec<u8> {
         match self {
             Op::Constant => vec![2],
-            Op::Add | Op::Pop => vec![],
+            Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Pop => vec![],
         }
     }
 }
