@@ -96,6 +96,13 @@ fn eval_expression(exp: &ast::Expression, bytecode: &mut Bytecode) -> ::std::res
             }
         },
         ast::Expression::Infix(exp) => {
+            if exp.operator == Token::Lt {
+                eval_expression(&exp.right, bytecode);
+                eval_expression(&exp.left, bytecode);
+                bytecode.emit(Op::GreaterThan, &vec![]);
+                return Ok(());
+            }
+
             eval_expression(&exp.left, bytecode);
             eval_expression(&exp.right, bytecode);
 
@@ -104,6 +111,9 @@ fn eval_expression(exp: &ast::Expression, bytecode: &mut Bytecode) -> ::std::res
                 Token::Minus => bytecode.emit(Op::Sub, &vec![]),
                 Token::Asterisk => bytecode.emit(Op::Mul, &vec![]),
                 Token::Slash => bytecode.emit(Op::Div, &vec![]),
+                Token::Gt => bytecode.emit(Op::GreaterThan, &vec![]),
+                Token::Eq => bytecode.emit(Op::Equal, &vec![]),
+                Token::Neq => bytecode.emit(Op::NotEqual, &vec![]),
                 _ => return Err(CompileError{message: format!("unknown operator {:?}", exp.operator)}),
             };
         },
@@ -197,6 +207,66 @@ mod test {
                 expected_constants: vec![],
                 expected_instructions: vec![
                     make_instruction(Op::False, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "1 > 2",
+                expected_constants: vec![Object::Int(1), Object::Int(2)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::GreaterThan, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "1 < 2",
+                expected_constants: vec![Object::Int(2), Object::Int(1)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::GreaterThan, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "1 == 2",
+                expected_constants: vec![Object::Int(1), Object::Int(2)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Equal, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "1 != 2",
+                expected_constants: vec![Object::Int(1), Object::Int(2)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::NotEqual, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "true == false",
+                expected_constants: vec![],
+                expected_instructions: vec![
+                    make_instruction(Op::True, &vec![]),
+                    make_instruction(Op::False, &vec![]),
+                    make_instruction(Op::Equal, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "true != false",
+                expected_constants: vec![],
+                expected_instructions: vec![
+                    make_instruction(Op::True, &vec![]),
+                    make_instruction(Op::False, &vec![]),
+                    make_instruction(Op::NotEqual, &vec![]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
             },

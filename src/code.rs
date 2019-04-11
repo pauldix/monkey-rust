@@ -49,6 +49,9 @@ pub enum Op {
     Pop,
     True,
     False,
+    Equal,
+    NotEqual,
+    GreaterThan,
 }
 
 impl Op {
@@ -62,6 +65,9 @@ impl Op {
             Op::Pop => "OpPop",
             Op::True => "OpTrue",
             Op::False => "OpFalse",
+            Op::Equal => "OpEqual",
+            Op::NotEqual => "OpNotEqual",
+            Op::GreaterThan => "OpGreaterThan",
         }
     }
 
@@ -70,7 +76,8 @@ impl Op {
             Op::Constant => vec![2],
             Op::Add | Op::Sub | Op::Mul |
             Op::Div | Op::Pop | Op::True |
-            Op::False => vec![],
+            Op::False | Op::Equal | Op::NotEqual |
+            Op::GreaterThan => vec![],
         }
     }
 }

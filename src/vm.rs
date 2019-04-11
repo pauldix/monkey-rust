@@ -52,6 +52,7 @@ impl VM {
                     self.push(c)
                 },
                 Op::Add | Op::Sub | Op::Mul | Op::Div => self.execute_binary_operation(op),
+                Op::GreaterThan | Op::Equal | Op::NotEqual => self.execute_comparison(op),
                 Op::Pop => {
                     self.pop();
                     ()
@@ -69,8 +70,8 @@ impl VM {
         let right = self.pop();
         let left = self.pop();
 
-        match (right.borrow(), left.borrow()) {
-            (Object::Int(right), Object::Int(left)) => {
+        match (left.borrow(), right.borrow()) {
+            (Object::Int(left), Object::Int(right)) => {
                 let result = match op {
                     Op::Add => left + right,
                     Op::Sub => left - right,
@@ -81,7 +82,35 @@ impl VM {
 
                 self.push(Rc::new(Object::Int(result)));
             },
-            _ => panic!("unable to {:?} {:?} and {:?}", op, right, left),
+            _ => panic!("unable to {:?} {:?} and {:?}", op, left, right),
+        }
+    }
+
+    fn execute_comparison(&mut self, op: Op) {
+        let right = self.pop();
+        let left = self.pop();
+
+        match (left.borrow(), right.borrow()) {
+            (Object::Int(left), Object::Int(right)) => {
+                let result = match op {
+                    Op::Equal => left == right,
+                    Op::NotEqual => left != right,
+                    Op::GreaterThan => left > right,
+                    _ => panic!("unsupported operator in comparison {:?}", op)
+                };
+
+                self.push(Rc::new(Object::Bool(result)));
+            },
+            (Object::Bool(left), Object::Bool(right)) => {
+                let result = match op {
+                    Op::Equal => left == right,
+                    Op::NotEqual => left != right,
+                    _ => panic!("unsupported operator in comparison {:?}", op)
+                };
+
+                self.push(Rc::new(Object::Bool(result)));
+            },
+            _ => panic!("unable to {:?} {:?} and {:?}", op, left, right),
         }
     }
 
@@ -136,6 +165,23 @@ mod test {
         let tests = vec![
             VMTestCase{input: "true", expected: Object::Bool(true)},
             VMTestCase{input: "false", expected: Object::Bool(false)},
+            VMTestCase{input: "1 < 2", expected: Object::Bool(true)},
+            VMTestCase{input: "1 > 2", expected: Object::Bool(false)},
+            VMTestCase{input: "1 < 1", expected: Object::Bool(false)},
+            VMTestCase{input: "1 > 1", expected: Object::Bool(false)},
+            VMTestCase{input: "1 == 1", expected: Object::Bool(true)},
+            VMTestCase{input: "1 != 1", expected: Object::Bool(false)},
+            VMTestCase{input: "1 == 2", expected: Object::Bool(false)},
+            VMTestCase{input: "1 != 2", expected: Object::Bool(true)},
+            VMTestCase{input: "true == true", expected: Object::Bool(true)},
+            VMTestCase{input: "false == false", expected: Object::Bool(true)},
+            VMTestCase{input: "true == false", expected: Object::Bool(false)},
+            VMTestCase{input: "true != false", expected: Object::Bool(true)},
+            VMTestCase{input: "false != true", expected: Object::Bool(true)},
+            VMTestCase{input: "(1 < 2) == true", expected: Object::Bool(true)},
+            VMTestCase{input: "(1 < 2) == false", expected: Object::Bool(false)},
+            VMTestCase{input: "(1 > 2) == true", expected: Object::Bool(false)},
+            VMTestCase{input: "(1 > 2) == false", expected: Object::Bool(true)},
         ];
 
         run_vm_tests(tests);
