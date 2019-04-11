@@ -88,6 +88,13 @@ fn eval_expression(exp: &ast::Expression, bytecode: &mut Bytecode) -> ::std::res
             let operands = vec![bytecode.add_constant(int)];
             bytecode.emit(Op::Constant, &operands);
         },
+        ast::Expression::Boolean(b) => {
+            if *b {
+                bytecode.emit(Op::True, &vec![]);
+            } else {
+                bytecode.emit(Op::False, &vec![]);
+            }
+        },
         ast::Expression::Infix(exp) => {
             eval_expression(&exp.left, bytecode);
             eval_expression(&exp.right, bytecode);
@@ -166,6 +173,30 @@ mod test {
                     make_instruction(Op::Constant, &vec![0]),
                     make_instruction(Op::Constant, &vec![1]),
                     make_instruction(Op::Div, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+        ];
+
+        run_compiler_tests(tests)
+    }
+
+    #[test]
+    fn boolean_expressions() {
+        let tests = vec![
+            CompilerTestCase{
+                input: "true",
+                expected_constants: vec![],
+                expected_instructions: vec![
+                    make_instruction(Op::True, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "false",
+                expected_constants: vec![],
+                expected_instructions: vec![
+                    make_instruction(Op::False, &vec![]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
             },

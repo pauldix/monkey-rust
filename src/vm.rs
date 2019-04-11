@@ -56,6 +56,8 @@ impl VM {
                     self.pop();
                     ()
                 },
+                Op::True => self.push(Rc::new(Object::Bool(true))),
+                Op::False => self.push(Rc::new(Object::Bool(false))),
                 _ => panic!("unsupported op {:?}", op),
             }
 
@@ -129,6 +131,16 @@ mod test {
         run_vm_tests(tests);
     }
 
+    #[test]
+    fn boolean_expressions() {
+        let tests = vec![
+            VMTestCase{input: "true", expected: Object::Bool(true)},
+            VMTestCase{input: "false", expected: Object::Bool(false)},
+        ];
+
+        run_vm_tests(tests);
+    }
+
     fn run_vm_tests(tests: Vec<VMTestCase>) {
         for t in tests {
             let program = parse(t.input).unwrap();
@@ -147,6 +159,9 @@ mod test {
         match (&exp, &got) {
             (Object::Int(exp), Object::Int(got)) => if exp != got {
                 panic!("ints not equal: exp: {}, got: {}", exp, got)
+            },
+            (Object::Bool(exp), Object::Bool(got)) => if exp != got {
+                panic!("bools not equal: exp: {}, got: {}", exp, got)
             },
             _ => panic!("can't compare objects: exp: {:?}, got: {:?}", exp, got)
         }

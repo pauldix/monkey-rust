@@ -47,6 +47,8 @@ pub enum Op {
     Mul,
     Div,
     Pop,
+    True,
+    False,
 }
 
 impl Op {
@@ -58,13 +60,17 @@ impl Op {
             Op::Mul => "OpMul",
             Op::Div => "OpDiv",
             Op::Pop => "OpPop",
+            Op::True => "OpTrue",
+            Op::False => "OpFalse",
         }
     }
 
     pub fn operand_widths(&self) -> Vec<u8> {
         match self {
             Op::Constant => vec![2],
-            Op::Add | Op::Sub | Op::Mul | Op::Div | Op::Pop => vec![],
+            Op::Add | Op::Sub | Op::Mul |
+            Op::Div | Op::Pop | Op::True |
+            Op::False => vec![],
         }
     }
 }
