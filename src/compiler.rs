@@ -117,6 +117,15 @@ fn eval_expression(exp: &ast::Expression, bytecode: &mut Bytecode) -> ::std::res
                 _ => return Err(CompileError{message: format!("unknown operator {:?}", exp.operator)}),
             };
         },
+        ast::Expression::Prefix(exp) => {
+            eval_expression(&exp.right, bytecode);
+
+            match exp.operator {
+                Token::Minus => bytecode.emit(Op::Minus, &vec![]),
+                Token::Bang => bytecode.emit(Op::Bang, &vec![]),
+                _ => return Err(CompileError{message: format!("unknown operator {:?}", exp.operator)}),
+            };
+        },
         _ => panic!("not implemented")
     }
 
@@ -183,6 +192,15 @@ mod test {
                     make_instruction(Op::Constant, &vec![0]),
                     make_instruction(Op::Constant, &vec![1]),
                     make_instruction(Op::Div, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "-1",
+                expected_constants: vec![Object::Int(1)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Minus, &vec![]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
             },
@@ -267,6 +285,15 @@ mod test {
                     make_instruction(Op::True, &vec![]),
                     make_instruction(Op::False, &vec![]),
                     make_instruction(Op::NotEqual, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "!true",
+                expected_constants: vec![],
+                expected_instructions: vec![
+                    make_instruction(Op::True, &vec![]),
+                    make_instruction(Op::Bang, &vec![]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
             },

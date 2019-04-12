@@ -59,6 +59,8 @@ impl VM {
                 },
                 Op::True => self.push(Rc::new(Object::Bool(true))),
                 Op::False => self.push(Rc::new(Object::Bool(false))),
+                Op::Bang => self.execute_bang_operator(),
+                Op::Minus => self.execute_minus_operator(),
                 _ => panic!("unsupported op {:?}", op),
             }
 
@@ -114,6 +116,25 @@ impl VM {
         }
     }
 
+    fn execute_bang_operator(&mut self) {
+        let op = self.pop();
+
+        match op.borrow() {
+            Object::Bool(true) => self.push(Rc::new(Object::Bool(false))),
+            Object::Bool(false) => self.push(Rc::new(Object::Bool(true))),
+            _ => self.push(Rc::new(Object::Bool(false))),
+        }
+    }
+
+    fn execute_minus_operator(&mut self) {
+        let op = self.pop();
+
+        match op.borrow() {
+            Object::Int(int) => self.push(Rc::new(Object::Int(-*int))),
+            _ => panic!("unsupported type for negation {:?}", op)
+        }
+    }
+
     fn push(&mut self, o: Rc<Object>) {
         if self.sp >= STACK_SIZE {
             panic!("stack overflow")
@@ -155,6 +176,10 @@ mod test {
             VMTestCase{input: "5 * 2 + 10", expected: Object::Int(20)},
             VMTestCase{input: "5 + 2 * 10", expected: Object::Int(25)},
             VMTestCase{input: "5 * (2 + 10)", expected: Object::Int(60)},
+            VMTestCase{input: "-5", expected: Object::Int(-5)},
+            VMTestCase{input: "-10", expected: Object::Int(-10)},
+            VMTestCase{input: "-50 + 100 + -50", expected: Object::Int(0)},
+            VMTestCase{input: "(5 + 10 * 2 + 15 / 3) * 2 + -10", expected: Object::Int(50)},
         ];
 
         run_vm_tests(tests);
@@ -182,6 +207,12 @@ mod test {
             VMTestCase{input: "(1 < 2) == false", expected: Object::Bool(false)},
             VMTestCase{input: "(1 > 2) == true", expected: Object::Bool(false)},
             VMTestCase{input: "(1 > 2) == false", expected: Object::Bool(true)},
+            VMTestCase{input: "!true", expected: Object::Bool(false)},
+            VMTestCase{input: "!false", expected: Object::Bool(true)},
+            VMTestCase{input: "!5", expected: Object::Bool(false)},
+            VMTestCase{input: "!!true", expected: Object::Bool(true)},
+            VMTestCase{input: "!!false", expected: Object::Bool(false)},
+            VMTestCase{input: "!!5", expected: Object::Bool(true)},
         ];
 
         run_vm_tests(tests);

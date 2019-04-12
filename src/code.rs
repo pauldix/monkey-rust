@@ -52,6 +52,8 @@ pub enum Op {
     Equal,
     NotEqual,
     GreaterThan,
+    Minus,
+    Bang,
 }
 
 impl Op {
@@ -68,6 +70,8 @@ impl Op {
             Op::Equal => "OpEqual",
             Op::NotEqual => "OpNotEqual",
             Op::GreaterThan => "OpGreaterThan",
+            Op::Minus => "OpMinus",
+            Op::Bang => "OpBang",
         }
     }
 
@@ -77,7 +81,7 @@ impl Op {
             Op::Add | Op::Sub | Op::Mul |
             Op::Div | Op::Pop | Op::True |
             Op::False | Op::Equal | Op::NotEqual |
-            Op::GreaterThan => vec![],
+            Op::GreaterThan | Op::Minus | Op::Bang => vec![],
         }
     }
 }
