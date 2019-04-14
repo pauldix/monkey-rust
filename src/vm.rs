@@ -1,4 +1,4 @@
-use crate::compiler::compile;
+use crate::compiler::Compiler;
 use crate::object::Object;
 use crate::parser::parse;
 use crate::code::{Instructions, Op};
@@ -221,7 +221,8 @@ mod test {
     fn run_vm_tests(tests: Vec<VMTestCase>) {
         for t in tests {
             let program = parse(t.input).unwrap();
-            let bytecode = compile(program).unwrap();
+            let mut compiler = Compiler::new();
+            let bytecode = compiler.compile(program).unwrap();
 
             let mut vm = VM::new(bytecode.constants, bytecode.instructions);
 

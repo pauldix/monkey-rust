@@ -1,6 +1,6 @@
 use std::io;
 use crate::parser;
-use crate::compiler::compile;
+use crate::compiler::Compiler;
 use crate::vm;
 
 pub fn start<R: io::BufRead, W: io::Write>(mut reader: R, mut writer: W) -> io::Result<()> {
@@ -13,7 +13,9 @@ pub fn start<R: io::BufRead, W: io::Write>(mut reader: R, mut writer: W) -> io::
 
         match parser::parse(&line) {
             Ok(node) => {
-                match compile(node) {
+                let mut compiler = Compiler::new();
+
+                match compiler.compile(node) {
                     Ok(bytecode) => {
                         let mut vm = vm::VM::new(bytecode.constants, bytecode.instructions);
                         vm.run();

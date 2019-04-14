@@ -39,7 +39,7 @@ impl InstructionsFns for Instructions {
 
 
 #[repr(u8)]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Op {
     Constant,
     Add,
@@ -54,6 +54,8 @@ pub enum Op {
     GreaterThan,
     Minus,
     Bang,
+    JumpNotTruthy,
+    Jump,
 }
 
 impl Op {
@@ -72,12 +74,14 @@ impl Op {
             Op::GreaterThan => "OpGreaterThan",
             Op::Minus => "OpMinus",
             Op::Bang => "OpBang",
+            Op::JumpNotTruthy => "OpJumpNotTruthy",
+            Op::Jump => "OpJump",
         }
     }
 
     pub fn operand_widths(&self) -> Vec<u8> {
         match self {
-            Op::Constant => vec![2],
+            Op::Constant | Op::JumpNotTruthy | Op::Jump => vec![2],
             Op::Add | Op::Sub | Op::Mul |
             Op::Div | Op::Pop | Op::True |
             Op::False | Op::Equal | Op::NotEqual |
