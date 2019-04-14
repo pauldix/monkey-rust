@@ -178,15 +178,11 @@ impl Compiler {
                     }
                 }
 
-                // set the jump position
-                let mut after_consequence;
+                let jump_pos = self.emit(Op::Jump, &vec![9999]);
+                let after_consequence_pos = self.instructions.len();
+                self.change_operand(jump_not_truthy_pos, after_consequence_pos);
 
                 if let Some(alternative) = &ifexp.alternative {
-                    let jump_pos = self.emit(Op::Jump, &vec![9999]);
-
-                    after_consequence = self.instructions.len();
-                    self.change_operand(jump_not_truthy_pos, after_consequence);
-
                     self.eval_block_statement(alternative)?;
 
                     if let Some(ins) = &self.last_instruction {
@@ -194,13 +190,12 @@ impl Compiler {
                             self.remove_last_instruction();
                         }
                     }
-
-                    let after_alternative_pos = self.instructions.len();
-                    self.change_operand(jump_pos, after_alternative_pos);
                 } else {
-                    after_consequence = self.instructions.len();
-                    self.change_operand(jump_not_truthy_pos, after_consequence);
+                    self.emit(Op::Null, &vec![]);
                 }
+
+                let after_alternative_pos = self.instructions.len();
+                self.change_operand(jump_pos, after_alternative_pos);
             },
             _ => panic!("not implemented")
         }
@@ -430,14 +425,18 @@ mod test {
                     // 0000
                     make_instruction(Op::True, &vec![]),
                     // 0001
-                    make_instruction(Op::JumpNotTruthy, &vec![7]),
+                    make_instruction(Op::JumpNotTruthy, &vec![10]),
                     // 0004
                     make_instruction(Op::Constant, &vec![0]),
                     // 0007
-                    make_instruction(Op::Pop, &vec![]),
-                    // 0008
-                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Jump, &vec![11]),
+                    // 0010
+                    make_instruction(Op::Null, &vec![]),
                     // 0011
+                    make_instruction(Op::Pop, &vec![]),
+                    // 0012
+                    make_instruction(Op::Constant, &vec![1]),
+                    // 0015
                     make_instruction(Op::Pop, &vec![]),
                 ],
             },

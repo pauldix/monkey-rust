@@ -74,6 +74,7 @@ impl VM {
                         ip = pos - 1;
                     }
                 },
+                Op::Null => self.push(Rc::new(Object::Null)),
                 _ => panic!("unsupported op {:?}", op),
             }
 
@@ -135,6 +136,7 @@ impl VM {
         match op.borrow() {
             Object::Bool(true) => self.push(Rc::new(Object::Bool(false))),
             Object::Bool(false) => self.push(Rc::new(Object::Bool(true))),
+            Object::Null => self.push(Rc::new(Object::Bool(true))),
             _ => self.push(Rc::new(Object::Bool(false))),
         }
     }
@@ -166,6 +168,7 @@ impl VM {
 fn is_truthy(obj: &Rc<Object>) -> bool {
     match obj.borrow() {
         Object::Bool(v) => *v,
+        Object::Null => false,
         _ => true,
     }
 }
@@ -233,6 +236,7 @@ mod test {
             VMTestCase{input: "!!true", expected: Object::Bool(true)},
             VMTestCase{input: "!!false", expected: Object::Bool(false)},
             VMTestCase{input: "!!5", expected: Object::Bool(true)},
+            VMTestCase{input: "!(if (false) { 5; })", expected: Object::Bool(true)},
         ];
 
         run_vm_tests(tests);
@@ -248,6 +252,9 @@ mod test {
             VMTestCase{input: "if (1 < 2) { 10 }", expected: Object::Int(10)},
             VMTestCase{input: "if (1 < 2) { 10 } else { 20 }", expected: Object::Int(10)},
             VMTestCase{input: "if (1 > 2) { 10 } else { 20 }", expected: Object::Int(20)},
+            VMTestCase{input: "if (1 > 2) { 10 }", expected: Object::Null},
+            VMTestCase{input: "if (false) { 10 }", expected: Object::Null},
+            VMTestCase{input: "if ((if (false) { 10 })) { 10 } else { 20 }", expected: Object::Int(20)},
         ];
 
         run_vm_tests(tests);
@@ -276,6 +283,7 @@ mod test {
             (Object::Bool(exp), Object::Bool(got)) => if exp != got {
                 panic!("bools not equal: exp: {}, got: {}", exp, got)
             },
+            (Object::Null, Object::Null) => (),
             _ => panic!("can't compare objects: exp: {:?}, got: {:?}", exp, got)
         }
     }

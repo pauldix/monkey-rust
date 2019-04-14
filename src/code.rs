@@ -56,6 +56,7 @@ pub enum Op {
     Bang,
     JumpNotTruthy,
     Jump,
+    Null,
 }
 
 impl Op {
@@ -76,6 +77,7 @@ impl Op {
             Op::Bang => "OpBang",
             Op::JumpNotTruthy => "OpJumpNotTruthy",
             Op::Jump => "OpJump",
+            Op::Null => "OpNull",
         }
     }
 
@@ -85,7 +87,7 @@ impl Op {
             Op::Add | Op::Sub | Op::Mul |
             Op::Div | Op::Pop | Op::True |
             Op::False | Op::Equal | Op::NotEqual |
-            Op::GreaterThan | Op::Minus | Op::Bang => vec![],
+            Op::GreaterThan | Op::Minus | Op::Bang | Op::Null => vec![],
         }
     }
 }
