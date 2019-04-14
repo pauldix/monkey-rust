@@ -61,6 +61,19 @@ impl VM {
                 Op::False => self.push(Rc::new(Object::Bool(false))),
                 Op::Bang => self.execute_bang_operator(),
                 Op::Minus => self.execute_minus_operator(),
+                Op::Jump => {
+                    let pos = BigEndian::read_u16(&self.instructions[ip+1..ip+3]) as usize;
+                    ip = pos - 1;
+                },
+                Op::JumpNotTruthy => {
+                    let pos = BigEndian::read_u16(&self.instructions[ip+1..ip+3]) as usize;
+                    ip += 2;
+
+                    let condition = self.pop();
+                    if !is_truthy(&condition) {
+                        ip = pos - 1;
+                    }
+                },
                 _ => panic!("unsupported op {:?}", op),
             }
 
@@ -150,6 +163,13 @@ impl VM {
     }
 }
 
+fn is_truthy(obj: &Rc<Object>) -> bool {
+    match obj.borrow() {
+        Object::Bool(v) => *v,
+        _ => true,
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -213,6 +233,21 @@ mod test {
             VMTestCase{input: "!!true", expected: Object::Bool(true)},
             VMTestCase{input: "!!false", expected: Object::Bool(false)},
             VMTestCase{input: "!!5", expected: Object::Bool(true)},
+        ];
+
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn conditionals() {
+        let tests = vec![
+            VMTestCase{input: "if (true) { 10 }", expected: Object::Int(10)},
+            VMTestCase{input: "if (true) { 10 } else { 20 }", expected: Object::Int(10)},
+            VMTestCase{input: "if (false) { 10 } else { 20 }", expected: Object::Int(20)},
+            VMTestCase{input: "if (1) { 10 }", expected: Object::Int(10)},
+            VMTestCase{input: "if (1 < 2) { 10 }", expected: Object::Int(10)},
+            VMTestCase{input: "if (1 < 2) { 10 } else { 20 }", expected: Object::Int(10)},
+            VMTestCase{input: "if (1 > 2) { 10 } else { 20 }", expected: Object::Int(20)},
         ];
 
         run_vm_tests(tests);
