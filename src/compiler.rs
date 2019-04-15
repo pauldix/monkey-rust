@@ -266,6 +266,12 @@ impl Compiler {
                     _ => panic!("symbol not resolved {:?}", name)
                 }
             },
+            ast::Expression::Array(array) => {
+                for el in &array.elements {
+                    self.eval_expression(el)?;
+                }
+                self.emit(Op::Array, &vec![array.elements.len()]);
+            },
             _ => panic!("not implemented {:?}", exp)
         }
 
@@ -646,6 +652,50 @@ mod test {
         run_compiler_tests(tests);
     }
 
+    #[test]
+    fn array_literals() {
+        let tests = vec![
+            CompilerTestCase{
+                input: "[]",
+                expected_constants: vec![],
+                expected_instructions: vec![
+                    make_instruction(Op::Array, &vec![0]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "[1, 2, 3]",
+                expected_constants: vec![Object::Int(1), Object::Int(2), Object::Int(3)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Constant, &vec![2]),
+                    make_instruction(Op::Array, &vec![3]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "[1 + 2, 3 - 4, 5 * 6]",
+                expected_constants: vec![Object::Int(1), Object::Int(2), Object::Int(3), Object::Int(4), Object::Int(5), Object::Int(6)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Add, &vec![]),
+                    make_instruction(Op::Constant, &vec![2]),
+                    make_instruction(Op::Constant, &vec![3]),
+                    make_instruction(Op::Sub, &vec![]),
+                    make_instruction(Op::Constant, &vec![4]),
+                    make_instruction(Op::Constant, &vec![5]),
+                    make_instruction(Op::Mul, &vec![]),
+                    make_instruction(Op::Array, &vec![3]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+        ];
+
+        run_compiler_tests(tests);
+    }
+
     fn run_compiler_tests(tests: Vec<CompilerTestCase>) {
         for t in tests {
             let program = parse(t.input).unwrap();
@@ -654,12 +704,10 @@ mod test {
                 |err| panic!("{} error compiling on input: {}. want: {:?}", err.message, t.input, t.expected_instructions));
 
             test_instructions(&t.expected_instructions, &bytecode.instructions).unwrap_or_else(
-                |err| panic!("{} error on instructions for: {}\nexp: {}\ngot: {}", &err.message, t.input, concat_instructions(&t.expected_instructions).string(), bytecode.instructions.string())
-            );
+                |err| panic!("{} error on instructions for: {}\nexp: {}\ngot: {}", &err.message, t.input, concat_instructions(&t.expected_instructions).string(), bytecode.instructions.string()));
 
             test_constants(&t.expected_constants, bytecode.constants.borrow()).unwrap_or_else(
-                |err| panic!("{} error on constants for : {}", &err.message, t.input)
-            );
+                |err| panic!("{} error on constants for : {}", &err.message, t.input));
         }
     }
 

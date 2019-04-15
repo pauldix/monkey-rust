@@ -1,5 +1,5 @@
 use crate::compiler::Compiler;
-use crate::object::Object;
+use crate::object::{Object, Array};
 use crate::parser::parse;
 use crate::code::{Instructions, Op};
 use byteorder;
@@ -107,12 +107,34 @@ impl<'a> VM<'a> {
                     ip += 2;
 
                     self.push(Rc::clone(&self.globals[global_index]));
-                }
+                },
+                Op::Array => {
+                    let num_elements = BigEndian::read_u16(&self.instructions[ip+1..ip+3]) as usize;
+                    ip += 2;
+
+                    let array = self.build_array(self.sp - num_elements, self.sp);
+                    self.sp -= num_elements;
+
+                    self.push(Rc::new(array));
+                },
                 _ => panic!("unsupported op {:?}", op),
             }
 
             ip += 1;
         }
+    }
+
+    fn build_array(&mut self, start_index: usize, end_index: usize) -> Object {
+        let mut elements = Vec::with_capacity(end_index - start_index);
+        elements.resize(end_index - start_index, Rc::new(Object::Null));
+        let mut i = start_index;
+
+        while i < end_index {
+            elements[i-start_index] = self.stack[i].clone();
+            i += 1;
+        }
+
+        Object::Array(Rc::new(Array{elements}))
     }
 
     fn execute_binary_operation(&mut self, op: Op) {
@@ -324,6 +346,40 @@ mod test {
         run_vm_tests(tests);
     }
 
+    #[test]
+    fn array_literals() {
+        let tests = vec![
+            VMTestCase{
+                input: "[]",
+                expected: Object::Array(Rc::new(Array{
+                    elements: vec![],
+                })),
+            },
+            VMTestCase{
+                input: "[1, 2, 3]",
+                expected: Object::Array(Rc::new(Array{
+                    elements: vec![
+                        Rc::new(Object::Int(1)),
+                        Rc::new(Object::Int(2)),
+                        Rc::new(Object::Int(3)),
+                    ],
+                })),
+            },
+            VMTestCase{
+                input: "[1 + 2, 3 * 4, 5 + 6]",
+                expected: Object::Array(Rc::new(Array{
+                    elements: vec![
+                        Rc::new(Object::Int(3)),
+                        Rc::new(Object::Int(12)),
+                        Rc::new(Object::Int(11)),
+                    ],
+                })),
+            },
+        ];
+
+        run_vm_tests(tests);
+    }
+
     fn run_vm_tests(tests: Vec<VMTestCase>) {
         for t in tests {
             let program = parse(t.input).unwrap();
@@ -349,6 +405,9 @@ mod test {
             },
             (Object::String(exp), Object::String(got)) => if exp != got {
                 panic!("strings not equal: exp: {}, got: {}", exp, got)
+            },
+            (Object::Array(exp), Object::Array(got)) => if exp != got {
+                panic!("arrays not equal: exp: {:?}, got: {:?}", exp, got)
             },
             (Object::Null, Object::Null) => (),
             _ => panic!("can't compare objects: exp: {:?}, got: {:?}", exp, got)

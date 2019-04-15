@@ -56,7 +56,7 @@ impl Hash for MonkeyHash {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Eq, PartialEq, Clone, Debug)]
 pub struct Array {
     pub elements: Vec<Rc<Object>>,
 }
@@ -67,13 +67,7 @@ impl Array {
         format!("[{}]", elements.join(", "))
     }
 }
-impl PartialEq for Array {
-    fn eq(&self, _other: &Array) -> bool {
-        // TODO: implment this later, but this shouldn't get used right now
-        panic!("eq not implemented for array");
-    }
-}
-impl Eq for Array {}
+
 impl Hash for Array {
     fn hash<H: Hasher>(&self, _state: &mut H) {
         // we should never hash an array so should be fine
