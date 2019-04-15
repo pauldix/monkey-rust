@@ -191,6 +191,10 @@ impl Compiler {
                     self.emit(Op::False, &vec![]);
                 }
             },
+            ast::Expression::String(s) => {
+                let operands = vec![self.add_constant(Object::String(s.to_string()))];
+                self.emit(Op::Constant, &operands);
+            },
             ast::Expression::Infix(exp) => {
                 if exp.operator == Token::Lt {
                     self.eval_expression(&exp.right);
@@ -616,6 +620,32 @@ mod test {
         }
     }
 
+    #[test]
+    fn string_expressions() {
+        let tests = vec![
+            CompilerTestCase{
+                input: "\"monkey\"",
+                expected_constants: vec![Object::String("monkey".to_string())],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "\"mon\" + \"key\"",
+                expected_constants: vec![Object::String("mon".to_string()), Object::String("key".to_string())],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Add, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+        ];
+
+        run_compiler_tests(tests);
+    }
+
     fn run_compiler_tests(tests: Vec<CompilerTestCase>) {
         for t in tests {
             let program = parse(t.input).unwrap();
@@ -659,6 +689,9 @@ mod test {
             let got = got.borrow();
             match (exp, got) {
                 (Object::Int(exp), Object::Int(got)) => if *exp != *got {
+                    return Err(CompileError{message: format!("constant {}, exp: {} got: {}", pos, exp, got)})
+                },
+                (Object::String(exp), Object::String(got)) => if exp != got {
                     return Err(CompileError{message: format!("constant {}, exp: {} got: {}", pos, exp, got)})
                 },
                 _ => panic!("can't compare objects: exp: {:?} got: {:?}", exp, got)

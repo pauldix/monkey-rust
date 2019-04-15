@@ -126,10 +126,19 @@ impl<'a> VM<'a> {
                     Op::Sub => left - right,
                     Op::Mul => left * right,
                     Op::Div => left / right,
-                    _ => panic!("unsupported operator in binary operation {:?}", op)
+                    _ => panic!("unsupported operator in integer binary operation {:?}", op)
                 };
 
                 self.push(Rc::new(Object::Int(result)));
+            },
+            (Object::String(left), Object::String(right)) => {
+                let mut result = left.clone();
+                match op {
+                    Op::Add => result.push_str(&right),
+                    _ => panic!("unsupported operator in string binary operation {:?}", op)
+                };
+
+                self.push(Rc::new(Object::String(result)));
             },
             _ => panic!("unable to {:?} {:?} and {:?}", op, left, right),
         }
@@ -304,6 +313,17 @@ mod test {
         run_vm_tests(tests);
     }
 
+    #[test]
+    fn string_expressions() {
+        let tests = vec![
+            VMTestCase{input: "\"monkey\"", expected: Object::String("monkey".to_string())},
+            VMTestCase{input: "\"mon\" + \"key\"", expected: Object::String("monkey".to_string())},
+            VMTestCase{input: "\"mon\" + \"key\" + \"banana\"", expected: Object::String("monkeybanana".to_string())},
+        ];
+
+        run_vm_tests(tests);
+    }
+
     fn run_vm_tests(tests: Vec<VMTestCase>) {
         for t in tests {
             let program = parse(t.input).unwrap();
@@ -326,6 +346,9 @@ mod test {
             },
             (Object::Bool(exp), Object::Bool(got)) => if exp != got {
                 panic!("bools not equal: exp: {}, got: {}", exp, got)
+            },
+            (Object::String(exp), Object::String(got)) => if exp != got {
+                panic!("strings not equal: exp: {}, got: {}", exp, got)
             },
             (Object::Null, Object::Null) => (),
             _ => panic!("can't compare objects: exp: {:?}, got: {:?}", exp, got)
