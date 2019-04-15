@@ -7,10 +7,11 @@ use std::{error, fmt};
 use std::fmt::Display;
 use std::rc::Rc;
 use std::borrow::Borrow;
+use std::collections::HashMap;
 
-pub struct Bytecode {
-    pub instructions: Instructions,
-    pub constants: Vec<Rc<Object>>,
+pub struct Bytecode<'a> {
+    pub instructions: &'a Instructions,
+    pub constants: &'a Vec<Rc<Object>>,
 }
 
 #[derive(Clone)]
@@ -28,9 +29,50 @@ impl EmittedInstruction {
     }
 }
 
+#[derive(Eq, PartialEq, Debug)]
+pub enum SymbolScope {
+    Global,
+}
+
+#[derive(Eq, PartialEq, Debug)]
+pub struct Symbol {
+    name: String,
+    scope: SymbolScope,
+    index: usize,
+}
+
+pub struct SymbolTable {
+    store: HashMap<String, Rc<Symbol>>,
+    num_definitions: usize,
+}
+
+impl SymbolTable {
+    pub fn new() -> SymbolTable {
+        SymbolTable{
+            store: HashMap::new(),
+            num_definitions: 0,
+        }
+    }
+
+    fn define(&mut self, name: &str) -> Rc<Symbol> {
+        let symbol = Rc::new(Symbol{name: name.to_string(), scope: SymbolScope::Global, index: self.num_definitions});
+        self.store.insert(name.to_string(), Rc::clone(&symbol));
+        self.num_definitions += 1;
+        symbol
+    }
+
+    fn resolve(&self, name: &str) -> Option<Rc<Symbol>> {
+        match self.store.get(name) {
+            Some(sym) => Some(Rc::clone(&sym)),
+            _ => None,
+        }
+    }
+}
+
 pub struct Compiler {
     pub instructions: Instructions,
     pub constants: Vec<Rc<Object>>,
+    pub symbol_table: SymbolTable,
 
     last_instruction: Option<EmittedInstruction>,
     previous_instruction: Option<EmittedInstruction>,
@@ -43,6 +85,17 @@ impl Compiler {
             constants: vec![],
             last_instruction: None,
             previous_instruction: None,
+            symbol_table: SymbolTable::new(),
+        }
+    }
+
+    pub fn new_with_state(symbol_table: SymbolTable, constants: Vec<Rc<Object>>) -> Compiler {
+        Compiler{
+            instructions: vec![],
+            constants,
+            last_instruction: None,
+            previous_instruction: None,
+            symbol_table,
         }
     }
 
@@ -56,11 +109,10 @@ impl Compiler {
         Ok(self.bytecode())
     }
 
-    pub fn bytecode(&mut self) -> Bytecode {
-        // TODO: figure out how to do something like this without cloning
+    pub fn bytecode(&self) -> Bytecode {
         Bytecode{
-            instructions: self.instructions.clone(),
-            constants: self.constants.clone(),
+            instructions: &self.instructions,
+            constants: &self.constants,
         }
     }
 
@@ -107,7 +159,12 @@ impl Compiler {
                 self.emit(Op::Pop, &vec![]);
             },
             ast::Statement::Return(ret) => panic!("not implemented"),
-            ast::Statement::Let(stmt) => panic!("not implemented"),
+            ast::Statement::Let(stmt) => {
+                self.eval_expression(&stmt.value)?;
+
+                let symbol = self.symbol_table.define(&stmt.name);
+                self.emit(Op::SetGobal, &vec![symbol.index]);
+            },
         }
         Ok(())
     }
@@ -197,7 +254,15 @@ impl Compiler {
                 let after_alternative_pos = self.instructions.len();
                 self.change_operand(jump_pos, after_alternative_pos);
             },
-            _ => panic!("not implemented")
+            ast::Expression::Identifier(name) => {
+                match self.symbol_table.resolve(name) {
+                    Some(sym) => {
+                        self.emit(Op::GetGlobal, &vec![sym.index]);
+                    },
+                    _ => panic!("symbol not resolved {:?}", name)
+                }
+            },
+            _ => panic!("not implemented {:?}", exp)
         }
 
         Ok(())
@@ -228,7 +293,7 @@ impl Compiler {
     }
 }
 
-type Result = ::std::result::Result<Bytecode, CompileError>;
+type Result<'a> = ::std::result::Result<Bytecode<'a>, CompileError>;
 
 #[derive(Debug)]
 pub struct CompileError {
@@ -467,6 +532,90 @@ mod test {
         run_compiler_tests(tests)
     }
 
+    #[test]
+    fn test_global_let_statements() {
+        let tests = vec![
+            CompilerTestCase{
+                input: "let one = 1; let two = 2;",
+                expected_constants: vec![Object::Int(1), Object::Int(2)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::SetGobal, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::SetGobal, &vec![1]),
+                ],
+            },
+            CompilerTestCase{
+                input: "let one = 1; one;",
+                expected_constants: vec![Object::Int(1)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::SetGobal, &vec![0]),
+                    make_instruction(Op::GetGlobal, &vec![0]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "let one = 1; let two = one; two;",
+                expected_constants: vec![Object::Int(1)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::SetGobal, &vec![0]),
+                    make_instruction(Op::GetGlobal, &vec![0]),
+                    make_instruction(Op::SetGobal, &vec![1]),
+                    make_instruction(Op::GetGlobal, &vec![1]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+        ];
+
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn define() {
+        let mut table = SymbolTable::new();
+        let a = table.define("a");
+        let exp_a = Rc::new(Symbol{name: "a".to_string(), scope: SymbolScope::Global, index: 0});
+        if a != exp_a {
+            panic!("exp: {:?}\ngot: {:?}", exp_a, a);
+        }
+
+        let b = table.define("b");
+        let exp_b = Rc::new(Symbol{name: "b".to_string(), scope: SymbolScope::Global, index: 1});
+        if b != exp_b {
+            panic!("exp: {:?}\ngot: {:?}", exp_b, b);
+        }
+    }
+
+    #[test]
+    fn resolve_global() {
+        let mut global = SymbolTable::new();
+        global.define("a");
+        global.define("b");
+
+        let exp_a = Rc::new(Symbol{name: "a".to_string(), scope: SymbolScope::Global, index: 0});
+        let exp_b = Rc::new(Symbol{name: "b".to_string(), scope: SymbolScope::Global, index: 1});
+
+        match global.resolve("a") {
+            Some(sym) => {
+                if sym != exp_a {
+                    panic!("a not equal: exp: {:?} got: {:?}", exp_a, sym);
+                }
+            },
+            _ => panic!("a didn't resovle"),
+        }
+
+        match global.resolve("b") {
+            Some(sym) => {
+                if sym != exp_b {
+                    panic!("b not equal: exp: {:?} got: {:?}", exp_b, sym);
+                }
+            },
+            _ => panic!("b didn't resolve"),
+        }
+    }
+
     fn run_compiler_tests(tests: Vec<CompilerTestCase>) {
         for t in tests {
             let program = parse(t.input).unwrap();
@@ -478,7 +627,7 @@ mod test {
                 |err| panic!("{} error on instructions for: {}\nexp: {}\ngot: {}", &err.message, t.input, concat_instructions(&t.expected_instructions).string(), bytecode.instructions.string())
             );
 
-            test_constants(&t.expected_constants, bytecode.constants).unwrap_or_else(
+            test_constants(&t.expected_constants, bytecode.constants.borrow()).unwrap_or_else(
                 |err| panic!("{} error on constants for : {}", &err.message, t.input)
             );
         }
@@ -503,7 +652,7 @@ mod test {
         Ok(())
     }
 
-    fn test_constants(expected: &Vec<Object>, actual: Vec<Rc<Object>>) -> ::std::result::Result<(), CompileError> {
+    fn test_constants(expected: &Vec<Object>, actual: &Vec<Rc<Object>>) -> ::std::result::Result<(), CompileError> {
         let mut pos = 0;
 
         for (exp, got) in expected.into_iter().zip(actual) {

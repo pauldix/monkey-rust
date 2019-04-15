@@ -8,17 +8,18 @@ use std::rc::Rc;
 use std::borrow::Borrow;
 
 const STACK_SIZE: usize = 2048;
+const GLOBAL_SIZE: usize = 65536;
 
-pub struct VM {
-    pub constants: Vec<Rc<Object>>,
-    pub instructions: Instructions,
-
-    pub stack: Vec<Rc<Object>>,
-    pub sp: usize,
+pub struct VM<'a> {
+    constants: &'a Vec<Rc<Object>>,
+    instructions: &'a Instructions,
+    stack: Vec<Rc<Object>>,
+    sp: usize,
+    pub globals: Vec<Rc<Object>>,
 }
 
-impl VM {
-    pub fn new(constants: Vec<Rc<Object>>, instructions: Instructions) -> VM {
+impl<'a> VM<'a> {
+    pub fn new(constants: &'a Vec<Rc<Object>>, instructions: &'a Instructions) -> VM<'a> {
         let mut stack = Vec::with_capacity(STACK_SIZE);
         stack.resize(STACK_SIZE, Rc::new(Object::Null));
 
@@ -27,6 +28,26 @@ impl VM {
             instructions,
             stack,
             sp: 0,
+            globals: VM::new_globals(),
+        }
+    }
+
+    pub fn new_globals() -> Vec<Rc<Object>> {
+        let mut globals = Vec::with_capacity(GLOBAL_SIZE);
+        globals.resize(GLOBAL_SIZE, Rc::new(Object::Null));
+        globals
+    }
+
+    pub fn new_with_global_store(constants: &'a Vec<Rc<Object>>, instructions: &'a Instructions, globals: Vec<Rc<Object>>) -> VM<'a> {
+        let mut stack = Vec::with_capacity(STACK_SIZE);
+        stack.resize(STACK_SIZE, Rc::new(Object::Null));
+
+        VM{
+            constants,
+            instructions,
+            stack,
+            sp: 0,
+            globals,
         }
     }
 
@@ -75,6 +96,18 @@ impl VM {
                     }
                 },
                 Op::Null => self.push(Rc::new(Object::Null)),
+                Op::SetGobal => {
+                    let global_index = BigEndian::read_u16(&self.instructions[ip+1..ip+3]) as usize;
+                    ip += 2;
+
+                    self.globals[global_index] = self.pop();
+                },
+                Op::GetGlobal => {
+                    let global_index = BigEndian::read_u16(&self.instructions[ip+1..ip+3]) as usize;
+                    ip += 2;
+
+                    self.push(Rc::clone(&self.globals[global_index]));
+                }
                 _ => panic!("unsupported op {:?}", op),
             }
 
@@ -255,6 +288,17 @@ mod test {
             VMTestCase{input: "if (1 > 2) { 10 }", expected: Object::Null},
             VMTestCase{input: "if (false) { 10 }", expected: Object::Null},
             VMTestCase{input: "if ((if (false) { 10 })) { 10 } else { 20 }", expected: Object::Int(20)},
+        ];
+
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn global_let_statements() {
+        let tests = vec![
+            VMTestCase{input: "let one = 1; one", expected: Object::Int(1)},
+            VMTestCase{input: "let one = 1; let two = 2; one + two", expected: Object::Int(3)},
+            VMTestCase{input: "let one = 1; let two = one + one; one + two", expected: Object::Int(3)},
         ];
 
         run_vm_tests(tests);
