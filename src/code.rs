@@ -61,6 +61,7 @@ pub enum Op {
     SetGobal,
     Array,
     Hash,
+    Index,
 }
 
 impl Op {
@@ -86,6 +87,7 @@ impl Op {
             Op::SetGobal => "OpSetGlobal",
             Op::Array => "OpArray",
             Op::Hash => "OpHash",
+            Op::Index => "OpIndex",
         }
     }
 
@@ -96,7 +98,8 @@ impl Op {
             Op::Add | Op::Sub | Op::Mul |
             Op::Div | Op::Pop | Op::True |
             Op::False | Op::Equal | Op::NotEqual |
-            Op::GreaterThan | Op::Minus | Op::Bang | Op::Null => vec![],
+            Op::GreaterThan | Op::Minus | Op::Bang | Op::Null |
+            Op::Index => vec![],
         }
     }
 }

@@ -281,6 +281,12 @@ impl Compiler {
                 };
                 self.emit(Op::Hash, &vec![keys.len() * 2]);
             },
+            ast::Expression::Index(idx) => {
+                self.eval_expression(&idx.left)?;
+                self.eval_expression(&idx.index)?;
+
+                self.emit(Op::Index, &vec![]);
+            },
             _ => panic!("not implemented {:?}", exp)
         }
 
@@ -743,6 +749,43 @@ mod test {
                     make_instruction(Op::Constant, &vec![5]),
                     make_instruction(Op::Mul, &vec![]),
                     make_instruction(Op::Hash, &vec![4]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+        ];
+
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn index_expressions() {
+        let tests = vec![
+            CompilerTestCase{
+                input: "[1, 2, 3][1 + 1]",
+                expected_constants: vec![Object::Int(1), Object::Int(2), Object::Int(3), Object::Int(1), Object::Int(1)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Constant, &vec![2]),
+                    make_instruction(Op::Array, &vec![3]),
+                    make_instruction(Op::Constant, &vec![3]),
+                    make_instruction(Op::Constant, &vec![4]),
+                    make_instruction(Op::Add, &vec![]),
+                    make_instruction(Op::Index, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "{1: 2}[2 - 1]",
+                expected_constants: vec![Object::Int(1), Object::Int(2), Object::Int(2), Object::Int(1)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Hash, &vec![2]),
+                    make_instruction(Op::Constant, &vec![2]),
+                    make_instruction(Op::Constant, &vec![3]),
+                    make_instruction(Op::Sub, &vec![]),
+                    make_instruction(Op::Index, &vec![]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
             },

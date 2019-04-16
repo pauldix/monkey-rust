@@ -127,10 +127,43 @@ impl<'a> VM<'a> {
 
                     self.push(Rc::new(hash));
                 },
+                Op::Index => {
+                    let index = self.pop();
+                    let left = self.pop();
+
+                    self.execute_index_expression(left, index);
+                },
                 _ => panic!("unsupported op {:?}", op),
             }
 
             ip += 1;
+        }
+    }
+
+    fn execute_index_expression(&mut self, left: Rc<Object>, index: Rc<Object>) {
+        match (&*left, &*index) {
+            (Object::Array(arr), Object::Int(idx)) => self.execute_array_index(&arr, *idx),
+            (Object::Hash(hash), _) => self.execute_hash_index(hash, index),
+            _ => panic!("index not supported on: {:?} {:?}", left, index),
+        }
+    }
+
+    fn execute_array_index(&mut self, arr: &Rc<Array>, idx: i64) {
+        match arr.elements.get(idx as usize) {
+            Some(el) => self.push(Rc::clone(el)),
+            None => self.push(Rc::new(Object::Null)),
+        }
+    }
+
+    fn execute_hash_index(&mut self, hash: &Rc<MonkeyHash>, index: Rc<Object>) {
+        match &*index {
+            Object::String(_) | Object::Int(_) | Object::Bool(_) => {
+                match hash.pairs.get(&*index) {
+                    Some(obj) => self.push(Rc::clone(obj)),
+                    None => self.push(Rc::new(Object::Null)),
+                }
+            },
+            _ => panic!("unusable as hash key: {}", index)
         }
     }
 
@@ -433,6 +466,24 @@ mod test {
                 input: "{1 + 1: 2 * 2, 3 + 3: 4 * 4}",
                 expected: hash_to_object(map!{2 => 4, 6 => 16}),
             },
+        ];
+
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn index_expressions() {
+        let tests = vec![
+            VMTestCase{input: "[1, 2, 3][1]", expected: Object::Int(2)},
+            VMTestCase{input: "[1, 2, 3][0 + 2]", expected: Object::Int(3)},
+            VMTestCase{input: "[[1, 1, 1]][0][0]", expected: Object::Int(1)},
+            VMTestCase{input: "[][0]", expected: Object::Null},
+            VMTestCase{input: "[1, 2, 3][99]", expected: Object::Null},
+            VMTestCase{input: "[1][-1]", expected: Object::Null},
+            VMTestCase{input: "{1: 1, 2: 2}[1]", expected: Object::Int(1)},
+            VMTestCase{input: "{1: 1, 2: 2}[2]", expected: Object::Int(2)},
+            VMTestCase{input: "{1: 1}[0]", expected: Object::Null},
+            VMTestCase{input: "{}[0]", expected: Object::Null},
         ];
 
         run_vm_tests(tests);
