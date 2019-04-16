@@ -272,6 +272,15 @@ impl Compiler {
                 }
                 self.emit(Op::Array, &vec![array.elements.len()]);
             },
+            ast::Expression::Hash(hash) => {
+                let mut keys: Vec<&ast::Expression> = hash.pairs.keys().into_iter().collect();
+                keys.sort_by(|a, b| (*a).string().cmp(&(*b).string()));
+                for k in &keys {
+                    self.eval_expression(*k)?;
+                    self.eval_expression(hash.pairs.get(*k).unwrap())?;
+                };
+                self.emit(Op::Hash, &vec![keys.len() * 2]);
+            },
             _ => panic!("not implemented {:?}", exp)
         }
 
@@ -688,6 +697,52 @@ mod test {
                     make_instruction(Op::Constant, &vec![5]),
                     make_instruction(Op::Mul, &vec![]),
                     make_instruction(Op::Array, &vec![3]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+        ];
+
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn hash_literals() {
+        let tests = vec![
+            CompilerTestCase{
+                input: "{}",
+                expected_constants: vec![],
+                expected_instructions: vec![
+                    make_instruction(Op::Hash, &vec![0]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "{1: 2, 3: 4, 5: 6}",
+                expected_constants: vec![Object::Int(1), Object::Int(2), Object::Int(3), Object::Int(4), Object::Int(5), Object::Int(6)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Constant, &vec![2]),
+                    make_instruction(Op::Constant, &vec![3]),
+                    make_instruction(Op::Constant, &vec![4]),
+                    make_instruction(Op::Constant, &vec![5]),
+                    make_instruction(Op::Hash, &vec![6]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "{1: 2 + 3, 4: 5 * 6}",
+                expected_constants: vec![Object::Int(1), Object::Int(2), Object::Int(3), Object::Int(4), Object::Int(5), Object::Int(6)],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Constant, &vec![2]),
+                    make_instruction(Op::Add, &vec![]),
+                    make_instruction(Op::Constant, &vec![3]),
+                    make_instruction(Op::Constant, &vec![4]),
+                    make_instruction(Op::Constant, &vec![5]),
+                    make_instruction(Op::Mul, &vec![]),
+                    make_instruction(Op::Hash, &vec![4]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
             },

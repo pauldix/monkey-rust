@@ -60,6 +60,7 @@ pub enum Op {
     GetGlobal,
     SetGobal,
     Array,
+    Hash,
 }
 
 impl Op {
@@ -84,13 +85,14 @@ impl Op {
             Op::GetGlobal => "OpGetGlobal",
             Op::SetGobal => "OpSetGlobal",
             Op::Array => "OpArray",
+            Op::Hash => "OpHash",
         }
     }
 
     pub fn operand_widths(&self) -> Vec<u8> {
         match self {
             Op::Constant | Op::JumpNotTruthy | Op::Jump |
-            Op::SetGobal | Op::GetGlobal | Op::Array => vec![2],
+            Op::SetGobal | Op::GetGlobal | Op::Array | Op::Hash => vec![2],
             Op::Add | Op::Sub | Op::Mul |
             Op::Div | Op::Pop | Op::True |
             Op::False | Op::Equal | Op::NotEqual |

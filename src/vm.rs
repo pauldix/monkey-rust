@@ -1,11 +1,12 @@
 use crate::compiler::Compiler;
-use crate::object::{Object, Array};
+use crate::object::{Object, Array, MonkeyHash};
 use crate::parser::parse;
 use crate::code::{Instructions, Op};
 use byteorder;
 use self::byteorder::{ByteOrder, BigEndian, ReadBytesExt};
 use std::rc::Rc;
 use std::borrow::Borrow;
+use std::collections::HashMap;
 
 const STACK_SIZE: usize = 2048;
 const GLOBAL_SIZE: usize = 65536;
@@ -117,6 +118,15 @@ impl<'a> VM<'a> {
 
                     self.push(Rc::new(array));
                 },
+                Op::Hash => {
+                    let num_elements = BigEndian::read_u16(&self.instructions[ip+1..ip+3]) as usize;
+                    ip += 2;
+
+                    let hash = self.build_hash(self.sp - num_elements, self.sp);
+                    self.sp -= num_elements;
+
+                    self.push(Rc::new(hash));
+                },
                 _ => panic!("unsupported op {:?}", op),
             }
 
@@ -135,6 +145,21 @@ impl<'a> VM<'a> {
         }
 
         Object::Array(Rc::new(Array{elements}))
+    }
+
+    fn build_hash(&mut self, start_index: usize, end_index: usize) -> Object {
+        let mut hash = HashMap::new();
+        let mut i = start_index;
+
+        while i < end_index {
+            let key = self.stack[i].clone();
+            let value = self.stack[i + 1].clone();
+
+            hash.insert(key, value);
+            i += 2;
+        }
+
+        Object::Hash(Rc::new(MonkeyHash{pairs: hash}))
     }
 
     fn execute_binary_operation(&mut self, op: Op) {
@@ -241,6 +266,7 @@ fn is_truthy(obj: &Rc<Object>) -> bool {
 mod test {
     use super::*;
     use std::rc::Rc;
+    use std::collections::HashMap;
 
     struct VMTestCase<'a> {
         input: &'a str,
@@ -380,6 +406,49 @@ mod test {
         run_vm_tests(tests);
     }
 
+    #[test]
+    fn hash_literals() {
+        macro_rules! map(
+            { $($key:expr => $value:expr),+ } => {
+                {
+                    let mut m = ::std::collections::HashMap::new();
+                    $(
+                        m.insert($key, $value);
+                    )+
+                    m
+                }
+            };
+        );
+
+        let tests = vec![
+            VMTestCase{
+                input: "{}",
+                expected: hash_to_object(HashMap::new()),
+            },
+            VMTestCase{
+                input: "{1: 2, 2: 3}",
+                expected: hash_to_object(map!{1 => 2, 2 => 3}),
+            },
+            VMTestCase{
+                input: "{1 + 1: 2 * 2, 3 + 3: 4 * 4}",
+                expected: hash_to_object(map!{2 => 4, 6 => 16}),
+            },
+        ];
+
+        run_vm_tests(tests);
+    }
+
+    fn hash_to_object(h: HashMap<i64,i64>) -> Object {
+        let hash = HashMap::new();
+        let mut mh = MonkeyHash{pairs: hash};
+
+        for (h, k) in h {
+            mh.pairs.insert(Rc::new(Object::Int(h)), Rc::new(Object::Int(k)));
+        }
+
+        Object::Hash(Rc::new(mh))
+    }
+
     fn run_vm_tests(tests: Vec<VMTestCase>) {
         for t in tests {
             let program = parse(t.input).unwrap();
@@ -408,6 +477,9 @@ mod test {
             },
             (Object::Array(exp), Object::Array(got)) => if exp != got {
                 panic!("arrays not equal: exp: {:?}, got: {:?}", exp, got)
+            },
+            (Object::Hash(exp), Object::Hash(got)) => if exp != got {
+                panic!("hashes not equal: exp: {:?}, got: {:?}", exp, got)
             },
             (Object::Null, Object::Null) => (),
             _ => panic!("can't compare objects: exp: {:?}, got: {:?}", exp, got)

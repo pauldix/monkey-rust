@@ -44,9 +44,9 @@ pub enum Expression {
     Hash(Box<HashLiteral>),
 }
 
-impl fmt::Display for Expression {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
+impl Expression {
+    pub fn string(&self) -> String {
+        match self {
             Expression::Identifier(s) => s.clone(),
             Expression::Integer(value) => format!("{}", value),
             Expression::Prefix(pref) => pref.to_string(),
@@ -59,8 +59,13 @@ impl fmt::Display for Expression {
             Expression::Array(a) => a.to_string(),
             Expression::Index(i) => i.to_string(),
             Expression::Hash(h) => h.to_string(),
-        };
-        write!(f, "{}", s)
+        }
+    }
+}
+
+impl fmt::Display for Expression {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.string())
     }
 }
 
