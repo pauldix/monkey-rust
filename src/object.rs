@@ -4,6 +4,8 @@ use std::hash::{Hash,Hasher};
 use std::cell::RefCell;
 use std::rc::Rc;
 use crate::ast;
+use crate::code;
+use code::InstructionsFns;
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum Object {
@@ -16,6 +18,7 @@ pub enum Object {
     Array(Rc<Array>),
     Hash(Rc<MonkeyHash>),
     Null,
+    CompiledFunction(Rc<CompiledFunction>),
 }
 
 impl Object {
@@ -30,6 +33,7 @@ impl Object {
             Object::Array(a) => a.inspect(),
             Object::Hash(h) => h.inspect(),
             Object::Null => String::from("null"),
+            Object::CompiledFunction(f) => f.inspect(),
         }
     }
 }
@@ -226,6 +230,22 @@ impl Hash for Function {
     fn hash<H: Hasher>(&self, _state: &mut H) {
         // we should never hash an array so should be fine
         panic!("hash for function not supported");
+    }
+}
+
+#[derive(Eq, PartialEq, Clone, Debug)]
+pub struct CompiledFunction {
+    pub instructions: code::Instructions,
+}
+
+impl CompiledFunction {
+    fn inspect(&self) -> String {
+        format!("CompiledFunction[{}]", self.instructions.string())
+    }
+}
+impl Hash for CompiledFunction {
+    fn hash<H: Hasher>(&self, _state: &mut H) {
+        panic!("hash for compiled function not supported")
     }
 }
 

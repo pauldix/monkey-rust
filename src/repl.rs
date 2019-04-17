@@ -21,7 +21,7 @@ pub fn start<R: io::BufRead, W: io::Write>(mut reader: R, mut writer: W) -> io::
 
                 match compiler.compile(node) {
                     Ok(bytecode) => {
-                        let mut vm = vm::VM::new_with_global_store(&compiler.constants, &compiler.instructions, globals);
+                        let mut vm = vm::VM::new_with_global_store(&compiler.constants, &compiler.current_instructions(), globals);
                         vm.run();
                         write!(writer, "{:?}\n", vm.last_popped_stack_elem().unwrap().inspect());
                         globals = vm.globals;

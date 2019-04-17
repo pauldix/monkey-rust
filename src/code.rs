@@ -62,6 +62,9 @@ pub enum Op {
     Array,
     Hash,
     Index,
+    Call,
+    ReturnValue,
+    Return,
 }
 
 impl Op {
@@ -88,6 +91,9 @@ impl Op {
             Op::Array => "OpArray",
             Op::Hash => "OpHash",
             Op::Index => "OpIndex",
+            Op::Call => "OpCall",
+            Op::ReturnValue => "OpReturnValue",
+            Op::Return => "OpReturn",
         }
     }
 
@@ -99,7 +105,7 @@ impl Op {
             Op::Div | Op::Pop | Op::True |
             Op::False | Op::Equal | Op::NotEqual |
             Op::GreaterThan | Op::Minus | Op::Bang | Op::Null |
-            Op::Index => vec![],
+            Op::Index | Op::Call | Op::ReturnValue | Op::Return => vec![],
         }
     }
 }

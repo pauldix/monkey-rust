@@ -1,4 +1,4 @@
-use crate::object::Object;
+use crate::object::{Object, CompiledFunction};
 use crate::code::{Instructions, InstructionsFns, Op, make_instruction};
 use crate::parser::parse;
 use crate::ast;
@@ -69,33 +69,42 @@ impl SymbolTable {
     }
 }
 
+struct CompilationScope {
+    instructions: Instructions,
+    last_instruction: Option<EmittedInstruction>,
+    previous_instruction: Option<EmittedInstruction>,
+}
+
 pub struct Compiler {
-    pub instructions: Instructions,
     pub constants: Vec<Rc<Object>>,
     pub symbol_table: SymbolTable,
 
-    last_instruction: Option<EmittedInstruction>,
-    previous_instruction: Option<EmittedInstruction>,
+    scopes: Vec<CompilationScope>,
+    scope_index: usize,
 }
 
 impl Compiler {
     pub fn new() -> Compiler {
         Compiler{
-            instructions: vec![],
             constants: vec![],
-            last_instruction: None,
-            previous_instruction: None,
             symbol_table: SymbolTable::new(),
+            scopes: vec![CompilationScope{
+                instructions: vec![],
+                last_instruction: None,
+                previous_instruction: None}],
+            scope_index: 0,
         }
     }
 
     pub fn new_with_state(symbol_table: SymbolTable, constants: Vec<Rc<Object>>) -> Compiler {
         Compiler{
-            instructions: vec![],
             constants,
-            last_instruction: None,
-            previous_instruction: None,
             symbol_table,
+            scopes: vec![CompilationScope{
+                instructions: vec![],
+                last_instruction: None,
+                previous_instruction: None}],
+            scope_index: 0,
         }
     }
 
@@ -109,9 +118,13 @@ impl Compiler {
         Ok(self.bytecode())
     }
 
+    pub fn current_instructions(&self) -> &Instructions {
+        &self.scopes[self.scope_index].instructions
+    }
+
     pub fn bytecode(&self) -> Bytecode {
         Bytecode{
-            instructions: &self.instructions,
+            instructions: &self.scopes[self.scope_index].instructions,
             constants: &self.constants,
         }
     }
@@ -125,16 +138,16 @@ impl Compiler {
     }
 
     fn set_last_instruction(&mut self, op_code: Op, position: usize) {
-        match &self.last_instruction {
-            Some(ins) => self.previous_instruction = Some(ins.clone()),
+        match &self.scopes[self.scope_index].last_instruction {
+            Some(ins) => self.scopes[self.scope_index].previous_instruction = Some(ins.clone()),
             _ => (),
         }
-        self.last_instruction = Some(EmittedInstruction{op_code, position});
+        self.scopes[self.scope_index].last_instruction = Some(EmittedInstruction{op_code, position});
     }
 
     fn add_instruction(&mut self, ins: &Vec<u8>) -> usize {
-        let pos = self.instructions.len();
-        self.instructions.extend_from_slice(ins);
+        let pos = self.scopes[self.scope_index].instructions.len();
+        self.scopes[self.scope_index].instructions.extend_from_slice(ins);
         return pos;
     }
 
@@ -158,7 +171,10 @@ impl Compiler {
                 // expressions put their value on the stack so this should be popped off since it doesn't get reused
                 self.emit(Op::Pop, &vec![]);
             },
-            ast::Statement::Return(ret) => panic!("not implemented"),
+            ast::Statement::Return(ret) => {
+                self.eval_expression(&ret.value);
+                self.emit(Op::ReturnValue, &vec![]);
+            },
             ast::Statement::Let(stmt) => {
                 self.eval_expression(&stmt.value)?;
 
@@ -233,29 +249,25 @@ impl Compiler {
 
                 self.eval_block_statement(&ifexp.consequence);
 
-                if let Some(ins) = &self.last_instruction {
-                    if ins.is_pop() {
-                        self.remove_last_instruction();
-                    }
+                if self.last_is_pop() {
+                    self.remove_last_instruction();
                 }
 
                 let jump_pos = self.emit(Op::Jump, &vec![9999]);
-                let after_consequence_pos = self.instructions.len();
+                let after_consequence_pos = self.scopes[self.scope_index].instructions.len();
                 self.change_operand(jump_not_truthy_pos, after_consequence_pos);
 
                 if let Some(alternative) = &ifexp.alternative {
                     self.eval_block_statement(alternative)?;
 
-                    if let Some(ins) = &self.last_instruction {
-                        if ins.is_pop() {
-                            self.remove_last_instruction();
-                        }
+                    if self.last_is_pop() {
+                        self.remove_last_instruction();
                     }
                 } else {
                     self.emit(Op::Null, &vec![]);
                 }
 
-                let after_alternative_pos = self.instructions.len();
+                let after_alternative_pos = self.scopes[self.scope_index].instructions.len();
                 self.change_operand(jump_pos, after_alternative_pos);
             },
             ast::Expression::Identifier(name) => {
@@ -287,32 +299,67 @@ impl Compiler {
 
                 self.emit(Op::Index, &vec![]);
             },
+            ast::Expression::Function(func) => {
+                self.enter_scope();
+
+                self.eval_block_statement(&func.body);
+
+                let instructions = self.leave_scope();
+                let compiled_func = Object::CompiledFunction(Rc::new(CompiledFunction{instructions}));
+                let const_pos= self.add_constant(compiled_func);
+                self.emit(Op::Constant, &vec![const_pos]);
+            }
             _ => panic!("not implemented {:?}", exp)
         }
 
         Ok(())
     }
 
+    fn last_is_pop(&self) -> bool {
+        match &self.scopes[self.scope_index].last_instruction {
+            Some(ins) => ins.is_pop(),
+            None => false,
+        }
+    }
+
+    fn enter_scope(&mut self) {
+        let scope = CompilationScope{
+            instructions: vec![],
+            last_instruction: None,
+            previous_instruction: None,
+        };
+
+        self.scopes.push(scope);
+        self.scope_index += 1;
+    }
+
+    fn leave_scope(&mut self) -> Instructions {
+        self.scope_index -= 1;
+        self.scopes.pop().unwrap().instructions
+    }
+
     fn remove_last_instruction(&mut self) {
-        let pos = match &self.last_instruction {
+        let ref mut scope = self.scopes[self.scope_index];
+        let pos = match &scope.last_instruction {
             Some(ins) => ins.position,
             _ => 0,
         };
 
-        self.instructions.truncate(pos);
-        self.last_instruction = self.previous_instruction.clone();
+        scope.instructions.truncate(pos);
+        scope.last_instruction = scope.previous_instruction.clone();
     }
 
     fn replace_instruction(&mut self, pos: usize, ins: &[u8]) {
         let mut i = 0;
+        let ref mut scope = self.scopes[self.scope_index];
         while i < ins.len() {
-            self.instructions[pos + i] = ins[i];
+            scope.instructions[pos + i] = ins[i];
             i += 1;
         }
     }
 
     fn change_operand(&mut self, pos: usize, operand: usize) {
-        let op = unsafe { ::std::mem::transmute(self.instructions[pos]) };
+        let op = unsafe { ::std::mem::transmute(self.scopes[self.scope_index].instructions[pos]) };
         let ins = make_instruction(op, &vec![operand]);
         self.replace_instruction(pos, &ins);
     }
@@ -794,6 +841,96 @@ mod test {
         run_compiler_tests(tests);
     }
 
+    #[test]
+    fn functions() {
+        let tests = vec![
+            CompilerTestCase{
+                input: "fn() { return 5 + 10 }",
+                expected_constants: vec![
+                    Object::Int(5),
+                    Object::Int(10),
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::Constant, &vec![0]),
+                        make_instruction(Op::Constant, &vec![1]),
+                        make_instruction(Op::Add, &vec![]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ])})),
+                ],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![2]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+        ];
+
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn compiler_scopes() {
+        let mut compiler = Compiler::new();
+        if compiler.scope_index != 0 {
+            panic!("scope_index wrong, exp: {}, got: {}", 0, compiler.scope_index);
+        }
+
+        compiler.emit(Op::Mul, &vec![]);
+
+        compiler.enter_scope();
+        if compiler.scope_index != 1 {
+            panic!("scope_index wrong, exp: {}, got: {}", 0, compiler.scope_index);
+        }
+
+        compiler.emit(Op::Sub, &vec![]);
+
+        let len = compiler.scopes[compiler.scope_index].instructions.len();
+        if len != 1 {
+            panic!("instructions length wrong, got: {}", len);
+        }
+
+        match &compiler.scopes[compiler.scope_index].last_instruction {
+            Some(ins) => {
+                match ins.op_code {
+                    Op::Sub => (),
+                    _ => panic!("wrong op code {:?}", ins.op_code),
+                }
+            },
+            None => panic!("last instruction not in scope"),
+        }
+
+        compiler.leave_scope();
+
+        if compiler.scope_index != 0 {
+            panic!("wrong scope index, got: {}", compiler.scope_index);
+        }
+
+        compiler.emit(Op::Add, &vec![]);
+
+        let len = compiler.scopes[compiler.scope_index].instructions.len();
+        if len != 2 {
+            panic!("instructions length wrong, got: {}", len);
+        }
+
+        match &compiler.scopes[compiler.scope_index].last_instruction {
+            Some(ins) => {
+                match ins.op_code {
+                    Op::Add => (),
+                    _ => panic!("wrong op code {:?}", ins.op_code),
+                }
+            },
+            None => panic!("last instruction not in scope"),
+        }
+
+        match &compiler.scopes[compiler.scope_index].previous_instruction {
+            Some(ins) => {
+                match ins.op_code {
+                    Op::Mul => (),
+                    _ => panic!("wrong op code {:?}", ins.op_code),
+                }
+            },
+            None => panic!("previous instruction not in scope"),
+        }
+    }
+
     fn run_compiler_tests(tests: Vec<CompilerTestCase>) {
         for t in tests {
             let program = parse(t.input).unwrap();
@@ -839,6 +976,9 @@ mod test {
                 },
                 (Object::String(exp), Object::String(got)) => if exp != got {
                     return Err(CompileError{message: format!("constant {}, exp: {} got: {}", pos, exp, got)})
+                },
+                (Object::CompiledFunction(exp), Object::CompiledFunction(got)) => if exp != got {
+                    return Err(CompileError{message: format!("constant {}, exp: {:?} got: {:?}", pos, exp, got)})
                 },
                 _ => panic!("can't compare objects: exp: {:?} got: {:?}", exp, got)
             }
