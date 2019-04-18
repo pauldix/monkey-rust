@@ -304,15 +304,36 @@ impl Compiler {
 
                 self.eval_block_statement(&func.body);
 
+                if self.last_is_pop() {
+                    self.replace_last_pop_with_return();
+                }
+
                 let instructions = self.leave_scope();
                 let compiled_func = Object::CompiledFunction(Rc::new(CompiledFunction{instructions}));
                 let const_pos= self.add_constant(compiled_func);
                 self.emit(Op::Constant, &vec![const_pos]);
-            }
+            },
+            ast::Expression::Call(exp) => {
+                self.eval_expression(&exp.function);
+                self.emit(Op::Call, &vec![]);
+            },
             _ => panic!("not implemented {:?}", exp)
         }
 
         Ok(())
+    }
+
+    fn replace_last_pop_with_return(&mut self) {
+        let mut last_pos = 0;
+        if let Some(ref ins) = self.scopes[self.scope_index].last_instruction {
+            last_pos = ins.position;
+        };
+
+        self.replace_instruction(last_pos, &make_instruction(Op::ReturnValue, &vec![]));
+
+        if let Some(ref mut ins) = self.scopes[self.scope_index].last_instruction {
+            ins.op_code = Op::ReturnValue;
+        }
     }
 
     fn last_is_pop(&self) -> bool {
@@ -858,6 +879,46 @@ mod test {
                 ],
                 expected_instructions: vec![
                     make_instruction(Op::Constant, &vec![2]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+        ];
+
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn function_calls() {
+        let tests = vec![
+            CompilerTestCase{
+                input: "fn() { 24 }();",
+                expected_constants: vec![
+                    Object::Int(24),
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::Constant, &vec![0]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ])})),
+                ],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Call, &vec![]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "let noArg = fn() { 24 }; noArg();",
+                expected_constants: vec![
+                    Object::Int(24),
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::Constant, &vec![0]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ])})),
+                ],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::SetGobal, &vec![0]),
+                    make_instruction(Op::GetGlobal, &vec![0]),
+                    make_instruction(Op::Call, &vec![]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
             },
