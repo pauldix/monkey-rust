@@ -1,5 +1,5 @@
 use crate::compiler::Compiler;
-use crate::object::{Object, Array, MonkeyHash};
+use crate::object::{Object, Array, MonkeyHash, CompiledFunction};
 use crate::parser::parse;
 use crate::code::{Instructions, Op};
 use byteorder;
@@ -10,46 +10,64 @@ use std::collections::HashMap;
 
 const STACK_SIZE: usize = 2048;
 const GLOBAL_SIZE: usize = 65536;
+const MAX_FRAMES: usize = 1024;
+
+#[derive(Clone)]
+struct Frame {
+    func: Rc<CompiledFunction>,
+    ip: usize,
+}
+
+//impl Frame {
+//    fn instructions(&mut self) -> &mut Instructions {
+//        &mut self.func.instructions
+//    }
+//}
 
 pub struct VM<'a> {
     constants: &'a Vec<Rc<Object>>,
-    instructions: &'a Instructions,
+
     stack: Vec<Rc<Object>>,
     sp: usize,
+
     pub globals: Vec<Rc<Object>>,
+
+    frames: Vec<Frame>,
+    frames_index: usize,
 }
 
 impl<'a> VM<'a> {
-    pub fn new(constants: &'a Vec<Rc<Object>>, instructions: &'a Instructions) -> VM<'a> {
+    pub fn new(constants: &'a Vec<Rc<Object>>, instructions: Instructions) -> VM<'a> {
         let mut stack = Vec::with_capacity(STACK_SIZE);
         stack.resize(STACK_SIZE, Rc::new(Object::Null));
 
+        let mut frames = Vec::with_capacity(MAX_FRAMES);
+        frames.resize(MAX_FRAMES, Frame{func: Rc::new(CompiledFunction{instructions: vec![]}), ip: 0});
+
+        let main_func = Rc::new(CompiledFunction{instructions});
+        let main_frame = Frame{func: main_func, ip: 0};
+        frames.push(main_frame);
+
         VM{
             constants,
-            instructions,
             stack,
             sp: 0,
             globals: VM::new_globals(),
+            frames,
+            frames_index: 1,
         }
     }
 
     pub fn new_globals() -> Vec<Rc<Object>> {
         let mut globals = Vec::with_capacity(GLOBAL_SIZE);
         globals.resize(GLOBAL_SIZE, Rc::new(Object::Null));
-        globals
+        return globals;
     }
 
-    pub fn new_with_global_store(constants: &'a Vec<Rc<Object>>, instructions: &'a Instructions, globals: Vec<Rc<Object>>) -> VM<'a> {
-        let mut stack = Vec::with_capacity(STACK_SIZE);
-        stack.resize(STACK_SIZE, Rc::new(Object::Null));
-
-        VM{
-            constants,
-            instructions,
-            stack,
-            sp: 0,
-            globals,
-        }
+    pub fn new_with_global_store(constants: &'a Vec<Rc<Object>>, instructions: Instructions, globals: Vec<Rc<Object>>) -> VM<'a> {
+        let mut vm = VM::new(constants, instructions);
+        vm.globals = globals;
+        return vm;
     }
 
     pub fn last_popped_stack_elem(&self, ) -> Option<Rc<Object>> {
@@ -59,15 +77,22 @@ impl<'a> VM<'a> {
         }
     }
 
+    fn current_instructions_len(&mut self) -> usize {
+        self.frames.last().unwrap().func.instructions.len()
+    }
+
     pub fn run(&mut self) {
         let mut ip = 0;
 
-        while ip < self.instructions.len() {
-            let op = unsafe { ::std::mem::transmute(**&self.instructions.get_unchecked(ip)) };
+        while ip < self.current_instructions_len() - 1 {
+            let frame = self.frames.last().unwrap();
+            ip = frame.ip;
+            let ins = &frame.func.instructions;
+            let op = unsafe { ::std::mem::transmute(*ins.get_unchecked(ip)) };
 
             match op {
                 Op::Constant => {
-                    let const_index = BigEndian::read_u16(&self.instructions[ip+1..ip+3]) as usize;
+                    let const_index = BigEndian::read_u16(&ins[ip+1..ip+3]) as usize;
                     ip += 2;
 
                     let c = Rc::clone(self.constants.get(const_index).unwrap());
@@ -84,11 +109,11 @@ impl<'a> VM<'a> {
                 Op::Bang => self.execute_bang_operator(),
                 Op::Minus => self.execute_minus_operator(),
                 Op::Jump => {
-                    let pos = BigEndian::read_u16(&self.instructions[ip+1..ip+3]) as usize;
+                    let pos = BigEndian::read_u16(&ins[ip+1..ip+3]) as usize;
                     ip = pos - 1;
                 },
                 Op::JumpNotTruthy => {
-                    let pos = BigEndian::read_u16(&self.instructions[ip+1..ip+3]) as usize;
+                    let pos = BigEndian::read_u16(&ins[ip+1..ip+3]) as usize;
                     ip += 2;
 
                     let condition = self.pop();
@@ -98,19 +123,19 @@ impl<'a> VM<'a> {
                 },
                 Op::Null => self.push(Rc::new(Object::Null)),
                 Op::SetGobal => {
-                    let global_index = BigEndian::read_u16(&self.instructions[ip+1..ip+3]) as usize;
+                    let global_index = BigEndian::read_u16(&ins[ip+1..ip+3]) as usize;
                     ip += 2;
 
                     self.globals[global_index] = self.pop();
                 },
                 Op::GetGlobal => {
-                    let global_index = BigEndian::read_u16(&self.instructions[ip+1..ip+3]) as usize;
+                    let global_index = BigEndian::read_u16(&ins[ip+1..ip+3]) as usize;
                     ip += 2;
 
                     self.push(Rc::clone(&self.globals[global_index]));
                 },
                 Op::Array => {
-                    let num_elements = BigEndian::read_u16(&self.instructions[ip+1..ip+3]) as usize;
+                    let num_elements = BigEndian::read_u16(&ins[ip+1..ip+3]) as usize;
                     ip += 2;
 
                     let array = self.build_array(self.sp - num_elements, self.sp);
@@ -119,7 +144,7 @@ impl<'a> VM<'a> {
                     self.push(Rc::new(array));
                 },
                 Op::Hash => {
-                    let num_elements = BigEndian::read_u16(&self.instructions[ip+1..ip+3]) as usize;
+                    let num_elements = BigEndian::read_u16(&ins[ip+1..ip+3]) as usize;
                     ip += 2;
 
                     let hash = self.build_hash(self.sp - num_elements, self.sp);
@@ -136,7 +161,7 @@ impl<'a> VM<'a> {
                 _ => panic!("unsupported op {:?}", op),
             }
 
-            ip += 1;
+            self.frames.last_mut().unwrap().ip = ip + 1;
         }
     }
 
@@ -506,7 +531,7 @@ mod test {
             let mut compiler = Compiler::new();
             let bytecode = compiler.compile(program).unwrap();
 
-            let mut vm = VM::new(bytecode.constants, bytecode.instructions);
+            let mut vm = VM::new(bytecode.constants, bytecode.instructions.to_vec());
 
             vm.run();
 
