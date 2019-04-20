@@ -8,11 +8,11 @@ use std::rc::Rc;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 
-const STACK_SIZE: usize = 2048;
+const STACK_SIZE: usize = 10;
 const GLOBAL_SIZE: usize = 65536;
 const MAX_FRAMES: usize = 1024;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct Frame {
     func: Rc<CompiledFunction>,
     ip: usize,
@@ -42,11 +42,11 @@ impl<'a> VM<'a> {
         stack.resize(STACK_SIZE, Rc::new(Object::Null));
 
         let mut frames = Vec::with_capacity(MAX_FRAMES);
-        frames.resize(MAX_FRAMES, Frame{func: Rc::new(CompiledFunction{instructions: vec![]}), ip: 0});
+        frames.resize(MAX_FRAMES, Frame{func: Rc::new(CompiledFunction{instructions: vec![]}), ip: 24});
 
         let main_func = Rc::new(CompiledFunction{instructions});
         let main_frame = Frame{func: main_func, ip: 0};
-        frames.push(main_frame);
+        frames[0] = main_frame;
 
         VM{
             constants,
@@ -54,7 +54,7 @@ impl<'a> VM<'a> {
             sp: 0,
             globals: VM::new_globals(),
             frames,
-            frames_index: 1,
+            frames_index: 0,
         }
     }
 
@@ -77,66 +77,92 @@ impl<'a> VM<'a> {
         }
     }
 
-    fn current_instructions_len(&mut self) -> usize {
-        self.frames.last().unwrap().func.instructions.len()
+    fn continue_current_frame(&self) -> bool {
+        let frame = &self.frames[self.frames_index];
+        return frame.ip < frame.func.instructions.len();
+    }
+
+    fn current_ip(&self) -> usize {
+        self.frames[self.frames_index].ip
+    }
+
+    fn push_frame(&mut self, frame: Frame) {
+        self.frames_index += 1;
+        self.frames[self.frames_index] = frame;
+    }
+
+    fn pop_frame(&mut self) {
+        self.frames_index -= 1;
+    }
+
+    fn read_op_at(&self, ip: usize) -> Op {
+        let ins = &self.frames[self.frames_index].func.instructions;
+        unsafe { ::std::mem::transmute(*ins.get_unchecked(ip)) }
+    }
+
+    fn read_usize_at(&self, ip: usize) -> usize {
+        let ins = &self.frames[self.frames_index].func.instructions;
+        BigEndian::read_u16(&ins[ip..ip+2]) as usize
+    }
+
+    fn set_ip(&mut self, ip: usize) {
+        self.frames[self.frames_index].ip = ip;
     }
 
     pub fn run(&mut self) {
         let mut ip = 0;
 
-        while ip < self.current_instructions_len() - 1 {
-            let frame = self.frames.last().unwrap();
-            ip = frame.ip;
-            let ins = &frame.func.instructions;
-            let op = unsafe { ::std::mem::transmute(*ins.get_unchecked(ip)) };
+        while self.continue_current_frame() {
+            ip = self.current_ip();
+            let op = self.read_op_at(ip);
+            self.set_ip(ip + 1);
 
             match op {
                 Op::Constant => {
-                    let const_index = BigEndian::read_u16(&ins[ip+1..ip+3]) as usize;
-                    ip += 2;
+                    let const_index = self.read_usize_at(ip + 1);
+                    self.set_ip(ip + 3);
 
-                    let c = Rc::clone(self.constants.get(const_index).unwrap());
+                    let c = Rc::clone(&self.constants[const_index]);
                     self.push(c)
                 },
                 Op::Add | Op::Sub | Op::Mul | Op::Div => self.execute_binary_operation(op),
                 Op::GreaterThan | Op::Equal | Op::NotEqual => self.execute_comparison(op),
                 Op::Pop => {
                     self.pop();
-                    ()
                 },
                 Op::True => self.push(Rc::new(Object::Bool(true))),
                 Op::False => self.push(Rc::new(Object::Bool(false))),
                 Op::Bang => self.execute_bang_operator(),
                 Op::Minus => self.execute_minus_operator(),
                 Op::Jump => {
-                    let pos = BigEndian::read_u16(&ins[ip+1..ip+3]) as usize;
-                    ip = pos - 1;
+                    let pos = self.read_usize_at(ip + 1);
+                    self.set_ip(pos);
                 },
                 Op::JumpNotTruthy => {
-                    let pos = BigEndian::read_u16(&ins[ip+1..ip+3]) as usize;
-                    ip += 2;
+                    let pos = self.read_usize_at(ip + 1);
+                    self.set_ip(ip + 3);
 
                     let condition = self.pop();
                     if !is_truthy(&condition) {
-                        ip = pos - 1;
+                        self.set_ip(pos);
                     }
                 },
                 Op::Null => self.push(Rc::new(Object::Null)),
                 Op::SetGobal => {
-                    let global_index = BigEndian::read_u16(&ins[ip+1..ip+3]) as usize;
-                    ip += 2;
+                    let global_index = self.read_usize_at(ip + 1);
+                    self.set_ip(ip + 3);
 
                     self.globals[global_index] = self.pop();
                 },
                 Op::GetGlobal => {
-                    let global_index = BigEndian::read_u16(&ins[ip+1..ip+3]) as usize;
-                    ip += 2;
+                    let global_index = self.read_usize_at(ip + 1);
+                    self.set_ip(ip + 3);
 
                     self.push(Rc::clone(&self.globals[global_index]));
                 },
                 Op::Array => {
-                    let num_elements = BigEndian::read_u16(&ins[ip+1..ip+3]) as usize;
-                    ip += 2;
+                    let num_elements = self.read_usize_at(ip + 1);
+                    self.set_ip(ip + 3);
 
                     let array = self.build_array(self.sp - num_elements, self.sp);
                     self.sp -= num_elements;
@@ -144,8 +170,8 @@ impl<'a> VM<'a> {
                     self.push(Rc::new(array));
                 },
                 Op::Hash => {
-                    let num_elements = BigEndian::read_u16(&ins[ip+1..ip+3]) as usize;
-                    ip += 2;
+                    let num_elements = self.read_usize_at(ip + 1);
+                    self.set_ip(ip + 3);
 
                     let hash = self.build_hash(self.sp - num_elements, self.sp);
                     self.sp -= num_elements;
@@ -158,10 +184,28 @@ impl<'a> VM<'a> {
 
                     self.execute_index_expression(left, index);
                 },
+                Op::Call => {
+                    match &*self.stack[self.sp - 1] {
+                        Object::CompiledFunction(ref func) => {
+                            let frame = Frame{func: Rc::clone(&func), ip: 0};
+                            self.push_frame(frame);
+                        },
+                        obj => panic!("called non-function {:?}", obj),
+                    }
+                },
+                Op::ReturnValue => {
+                    let return_value = self.pop();
+                    self.pop_frame();
+                    self.pop();
+                    self.push(return_value);
+                },
+                Op::Return => {
+                    self.pop_frame();
+                    self.pop();
+                    self.push(Rc::new(Object::Null));
+                },
                 _ => panic!("unsupported op {:?}", op),
             }
-
-            self.frames.last_mut().unwrap().ip = ip + 1;
         }
     }
 
@@ -509,6 +553,70 @@ mod test {
             VMTestCase{input: "{1: 1, 2: 2}[2]", expected: Object::Int(2)},
             VMTestCase{input: "{1: 1}[0]", expected: Object::Null},
             VMTestCase{input: "{}[0]", expected: Object::Null},
+        ];
+
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn calling_functions_without_arguments() {
+        let tests = vec![
+            VMTestCase{
+                input: "let fivePlusTen= fn() { 5 + 10; }; fivePlusTen();",
+                expected: Object::Int(15)
+            },
+            VMTestCase{
+                input: "let one = fn() { 1; }; let two = fn() { 2; }; one() + two();",
+                expected: Object::Int(3),
+            },
+            VMTestCase{
+                input: "let a = fn() { 1 }; let b = fn() { a() + 1 }; let c = fn() { b() + 1 }; c();",
+                expected: Object::Int(3),
+            },
+        ];
+
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn functions_with_return_statement() {
+        let tests = vec![
+            VMTestCase{
+                input: "let earlyExit = fn() { return 99; 100; }; earlyExit();",
+                expected: Object::Int(99),
+            },
+            VMTestCase{
+                input: "let earlyExit = fn() { return 99; return 100; }; earlyExit();",
+                expected: Object::Int(99),
+            }
+        ];
+
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn functions_without_return_value() {
+        let tests = vec![
+            VMTestCase{
+                input: "let noReturn = fn() { }; noReturn();",
+                expected: Object::Null,
+            },
+            VMTestCase{
+                input: "let noReturn = fn() { }; let noReturnTwo = fn() { noReturn(); }; noReturn(); noReturnTwo();",
+                expected: Object::Null,
+            },
+        ];
+
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn first_class_functions() {
+        let tests = vec![
+            VMTestCase{
+                input: "let returnsOne = fn() { 1; }; let returnsOneReturner = fn() { returnsOne; }; returnsOneReturner()();",
+                expected: Object::Int(1),
+            }
         ];
 
         run_vm_tests(tests);
