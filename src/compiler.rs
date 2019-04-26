@@ -30,21 +30,22 @@ impl EmittedInstruction {
     }
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub enum SymbolScope {
     Global,
     Local,
 }
 
-#[derive(Eq, PartialEq, Debug)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub struct Symbol {
     name: String,
     scope: SymbolScope,
     index: usize,
 }
 
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub struct SymbolTable {
-    outer: Option<Rc<RefCell<SymbolTable>>>,
+    outer: Option<Box<SymbolTable>>,
     store: HashMap<String, Rc<Symbol>>,
     num_definitions: usize,
 }
@@ -58,9 +59,9 @@ impl SymbolTable {
         }
     }
 
-    pub fn new_enclosed_symbol_table(outer: &Rc<RefCell<SymbolTable>>) -> SymbolTable {
+    pub fn new_enclosed_symbol_table(outer: SymbolTable) -> SymbolTable {
         SymbolTable{
-            outer: Some(Rc::clone(outer)),
+            outer: Some(Box::new(outer)),
             store: HashMap::new(),
             num_definitions: 0,
         }
@@ -82,7 +83,7 @@ impl SymbolTable {
         match self.store.get(name) {
             Some(sym) => Some(Rc::clone(&sym)),
             None => match &self.outer {
-                Some(outer) => outer.as_ref().borrow().resolve(name),
+                Some(outer) => outer.resolve(name),
                 None => None,
             },
         }
@@ -199,7 +200,11 @@ impl Compiler {
                 self.eval_expression(&stmt.value)?;
 
                 let symbol = self.symbol_table.define(&stmt.name);
-                self.emit(Op::SetGobal, &vec![symbol.index]);
+
+                match &symbol.scope {
+                    SymbolScope::Global => self.emit(Op::SetGobal, &vec![symbol.index]),
+                    SymbolScope::Local => self.emit(Op::SetLocal, &vec![symbol.index])
+                };
             },
         }
         Ok(())
@@ -293,7 +298,10 @@ impl Compiler {
             ast::Expression::Identifier(name) => {
                 match self.symbol_table.resolve(name) {
                     Some(sym) => {
-                        self.emit(Op::GetGlobal, &vec![sym.index]);
+                        match &sym.scope {
+                            SymbolScope::Global => self.emit(Op::GetGlobal, &vec![sym.index]),
+                            SymbolScope::Local => self.emit(Op::GetLocal, &vec![sym.index]),
+                        };
                     },
                     _ => panic!("symbol not resolved {:?}", name)
                 }
@@ -372,10 +380,17 @@ impl Compiler {
 
         self.scopes.push(scope);
         self.scope_index += 1;
+        self.symbol_table = SymbolTable::new_enclosed_symbol_table(self.symbol_table.clone());
     }
 
     fn leave_scope(&mut self) -> Instructions {
         self.scope_index -= 1;
+
+        match &self.symbol_table.outer {
+            Some(outer) => self.symbol_table = outer.as_ref().clone(),
+            None => panic!("can't leave top level scope"),
+        }
+
         self.scopes.pop().unwrap().instructions
     }
 
@@ -956,6 +971,8 @@ mod test {
 
         compiler.emit(Op::Mul, &vec![]);
 
+        let global_symbol_table = compiler.symbol_table.clone();
+
         compiler.enter_scope();
         if compiler.scope_index != 1 {
             panic!("scope_index wrong, exp: {}, got: {}", 0, compiler.scope_index);
@@ -978,10 +995,26 @@ mod test {
             None => panic!("last instruction not in scope"),
         }
 
+        match &compiler.symbol_table.outer {
+            Some(outer) => {
+                if outer.as_ref() != &global_symbol_table {
+                    panic!("compiler did not enclose symbol table");
+                }
+            },
+            None => panic!("compiler did not enclose symbol table"),
+        }
+
         compiler.leave_scope();
 
         if compiler.scope_index != 0 {
             panic!("wrong scope index, got: {}", compiler.scope_index);
+        }
+
+        if compiler.symbol_table != global_symbol_table {
+            panic!("compiler did not restore symbol table");
+        }
+        if let Some(_) = &compiler.symbol_table.outer {
+            panic!("compiler modified global symbol table incorrectly");
         }
 
         compiler.emit(Op::Add, &vec![]);
@@ -1075,11 +1108,11 @@ mod test {
 
     #[test]
     fn resolve_local() {
-        let mut global = Rc::new(RefCell::new(SymbolTable::new()));
-        global.borrow_mut().define("a");
-        global.borrow_mut().define("b");
+        let mut global = SymbolTable::new();
+        global.define("a");
+        global.define("b");
 
-        let mut local = SymbolTable::new_enclosed_symbol_table(&global);
+        let mut local = SymbolTable::new_enclosed_symbol_table(global);
         local.define("c");
         local.define("d");
 
@@ -1107,24 +1140,24 @@ mod test {
 
     #[test]
     fn resolve_nested_local() {
-        let mut global = Rc::new(RefCell::new(SymbolTable::new()));
-        global.borrow_mut().define("a");
-        global.borrow_mut().define("b");
-        let mut local = Rc::new(RefCell::new(SymbolTable::new_enclosed_symbol_table(&global)));
-        local.borrow_mut().define("c");
-        local.borrow_mut().define("d");
-        let mut nested_local = Rc::new(RefCell::new(SymbolTable::new_enclosed_symbol_table(&local)));
-        nested_local.borrow_mut().define("e");
-        nested_local.borrow_mut().define("f");
+        let mut global = SymbolTable::new();
+        global.define("a");
+        global.define("b");
+        let mut local = SymbolTable::new_enclosed_symbol_table(global);
+        local.define("c");
+        local.define("d");
+        let mut nested_local = SymbolTable::new_enclosed_symbol_table(local.clone());
+        nested_local.define("e");
+        nested_local.define("f");
 
         let tests = vec![
-            (local, vec![
+            (&local, vec![
                 ("a", SymbolScope::Global, 0),
                 ("b", SymbolScope::Global, 1),
                 ("c", SymbolScope::Local, 0),
                 ("d", SymbolScope::Local, 1),
             ]),
-            (nested_local, vec![
+            (&nested_local, vec![
                 ("a", SymbolScope::Global, 0),
                 ("b", SymbolScope::Global, 1),
                 ("e", SymbolScope::Local, 0),
@@ -1134,7 +1167,7 @@ mod test {
 
         for (table, expected) in tests {
             for (name, scope, index) in expected {
-                match table.borrow_mut().resolve(name) {
+                match table.resolve(name) {
                     Some(symbol) => {
                         if symbol.scope != scope {
                             panic!("expected scope {:?} on symbol {:?} but got {:?}", scope, name, symbol.scope);
