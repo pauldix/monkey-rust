@@ -236,6 +236,7 @@ impl Hash for Function {
 #[derive(Eq, PartialEq, Clone, Debug)]
 pub struct CompiledFunction {
     pub instructions: code::Instructions,
+    pub num_locals: usize,
 }
 
 impl CompiledFunction {

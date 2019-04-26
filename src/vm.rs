@@ -16,6 +16,7 @@ const MAX_FRAMES: usize = 1024;
 struct Frame {
     func: Rc<CompiledFunction>,
     ip: usize,
+    base_pointer: usize,
 }
 
 //impl Frame {
@@ -42,10 +43,10 @@ impl<'a> VM<'a> {
         stack.resize(STACK_SIZE, Rc::new(Object::Null));
 
         let mut frames = Vec::with_capacity(MAX_FRAMES);
-        frames.resize(MAX_FRAMES, Frame{func: Rc::new(CompiledFunction{instructions: vec![]}), ip: 24});
+        frames.resize(MAX_FRAMES, Frame{func: Rc::new(CompiledFunction{instructions: vec![], num_locals: 0}), ip: 24, base_pointer: 0});
 
-        let main_func = Rc::new(CompiledFunction{instructions});
-        let main_frame = Frame{func: main_func, ip: 0};
+        let main_func = Rc::new(CompiledFunction{instructions, num_locals: 0});
+        let main_frame = Frame{func: main_func, ip: 0, base_pointer: 0};
         frames[0] = main_frame;
 
         VM{
@@ -91,8 +92,9 @@ impl<'a> VM<'a> {
         self.frames[self.frames_index] = frame;
     }
 
-    fn pop_frame(&mut self) {
+    fn pop_frame(&mut self) -> usize {
         self.frames_index -= 1;
+        self.frames[self.frames_index + 1].base_pointer
     }
 
     fn read_op_at(&self, ip: usize) -> Op {
@@ -103,6 +105,11 @@ impl<'a> VM<'a> {
     fn read_usize_at(&self, ip: usize) -> usize {
         let ins = &self.frames[self.frames_index].func.instructions;
         BigEndian::read_u16(&ins[ip..ip+2]) as usize
+    }
+
+    fn read_u8_at(&self, ip: usize) -> u8 {
+        let ins = &self.frames[self.frames_index].func.instructions;
+        *&ins[ip]
     }
 
     fn set_ip(&mut self, ip: usize) {
@@ -154,12 +161,26 @@ impl<'a> VM<'a> {
 
                     self.globals[global_index] = self.pop();
                 },
+                Op::SetLocal => {
+                    let local_index = self.read_u8_at(ip + 1) as usize;
+                    self.set_ip(ip + 2);
+
+                    let base = self.frames[self.frames_index].base_pointer;
+                    self.stack[base + local_index] = self.pop();
+                },
                 Op::GetGlobal => {
                     let global_index = self.read_usize_at(ip + 1);
                     self.set_ip(ip + 3);
 
                     self.push(Rc::clone(&self.globals[global_index]));
                 },
+                Op::GetLocal => {
+                    let local_index = self.read_u8_at(ip + 1) as usize;
+                    self.set_ip(ip + 2);
+
+                    let base = self.frames[self.frames_index].base_pointer;
+                    self.push(Rc::clone(&self.stack[base + local_index]));
+                }
                 Op::Array => {
                     let num_elements = self.read_usize_at(ip + 1);
                     self.set_ip(ip + 3);
@@ -185,23 +206,26 @@ impl<'a> VM<'a> {
                     self.execute_index_expression(left, index);
                 },
                 Op::Call => {
-                    match &*self.stack[self.sp - 1] {
+                    let base_pointer = self.sp;
+                    let frame = match &*self.stack[self.sp - 1] {
                         Object::CompiledFunction(ref func) => {
-                            let frame = Frame{func: Rc::clone(&func), ip: 0};
-                            self.push_frame(frame);
+                            Frame{func: Rc::clone(&func), ip: 0, base_pointer: self.sp}
                         },
                         obj => panic!("called non-function {:?}", obj),
-                    }
+                    };
+                    let sp = base_pointer + frame.func.num_locals;
+                    self.push_frame(frame);
+                    self.sp = sp;
                 },
                 Op::ReturnValue => {
                     let return_value = self.pop();
-                    self.pop_frame();
-                    self.pop();
+                    let base_pointer = self.pop_frame();
+                    self.sp = base_pointer - 1;
                     self.push(return_value);
                 },
                 Op::Return => {
-                    self.pop_frame();
-                    self.pop();
+                    let base_pointer = self.pop_frame();
+                    self.sp = base_pointer - 1;
                     self.push(Rc::new(Object::Null));
                 },
                 _ => panic!("unsupported op {:?}", op),
@@ -616,6 +640,47 @@ mod test {
             VMTestCase{
                 input: "let returnsOne = fn() { 1; }; let returnsOneReturner = fn() { returnsOne; }; returnsOneReturner()();",
                 expected: Object::Int(1),
+            }
+        ];
+
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn calling_functions_with_bindings() {
+        let tests = vec![
+            VMTestCase{
+                input: "let one = fn() { let one = 1; one }; one();",
+                expected: Object::Int(1),
+            },
+            VMTestCase{
+                input: "let oneAndTwo = fn() { let one = 1; let two = 2; one + two; }; oneAndTwo();",
+                expected: Object::Int(3),
+            },
+            VMTestCase{
+                input: "let oneAndTwo = fn() { let one = 1; let two = 2; one + two; };
+        let threeAndFour = fn() { let three = 3; let four = 4; three + four; };
+        oneAndTwo() + threeAndFour();",
+                expected: Object::Int(10),
+            },
+            VMTestCase{
+                input: "let firstFoobar = fn() { let foobar = 50; foobar; };
+        let secondFoobar = fn() { let foobar = 100; foobar; };
+        firstFoobar() + secondFoobar();",
+                expected: Object::Int(150),
+            },
+            VMTestCase{
+                input: "let globalSeed = 50;
+        let minusOne = fn() {
+            let num = 1;
+            globalSeed - num;
+        }
+        let minusTwo = fn() {
+            let num = 2;
+            globalSeed - num;
+        }
+        minusOne() + minusTwo();",
+                expected: Object::Int(97),
             }
         ];
 

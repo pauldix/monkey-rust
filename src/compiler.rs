@@ -336,8 +336,10 @@ impl Compiler {
                     self.replace_last_pop_with_return();
                 }
 
+                let num_locals = self.symbol_table.num_definitions;
+
                 let instructions = self.leave_scope();
-                let compiled_func = Object::CompiledFunction(Rc::new(CompiledFunction{instructions}));
+                let compiled_func = Object::CompiledFunction(Rc::new(CompiledFunction{instructions, num_locals}));
                 let const_pos= self.add_constant(compiled_func);
                 self.emit(Op::Constant, &vec![const_pos]);
             },
@@ -909,8 +911,8 @@ mod test {
                         make_instruction(Op::Constant, &vec![0]),
                         make_instruction(Op::Constant, &vec![1]),
                         make_instruction(Op::Add, &vec![]),
-                        make_instruction(Op::ReturnValue, &vec![]),
-                    ])})),
+                        make_instruction(Op::ReturnValue, &vec![])
+                    ]), num_locals: 0})),
                 ],
                 expected_instructions: vec![
                     make_instruction(Op::Constant, &vec![2]),
@@ -932,7 +934,7 @@ mod test {
                     Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
                         make_instruction(Op::Constant, &vec![0]),
                         make_instruction(Op::ReturnValue, &vec![]),
-                    ])})),
+                    ]), num_locals: 0})),
                 ],
                 expected_instructions: vec![
                     make_instruction(Op::Constant, &vec![1]),
@@ -947,7 +949,7 @@ mod test {
                     Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
                         make_instruction(Op::Constant, &vec![0]),
                         make_instruction(Op::ReturnValue, &vec![]),
-                    ])})),
+                    ]), num_locals: 0})),
                 ],
                 expected_instructions: vec![
                     make_instruction(Op::Constant, &vec![1]),
@@ -1055,7 +1057,7 @@ mod test {
                     Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
                         make_instruction(Op::GetGlobal, &vec![0]),
                         make_instruction(Op::ReturnValue, &vec![]),
-                    ])})),
+                    ]), num_locals: 0})),
                 ],
                 expected_instructions: vec![
                     make_instruction(Op::Constant, &vec![0]),
@@ -1073,7 +1075,7 @@ mod test {
                         make_instruction(Op::SetLocal, &vec![0]),
                         make_instruction(Op::GetLocal, &vec![0]),
                         make_instruction(Op::ReturnValue, &vec![]),
-                    ])})),
+                    ]), num_locals: 1})),
                 ],
                 expected_instructions: vec![
                     make_instruction(Op::Constant, &vec![1]),
@@ -1094,7 +1096,7 @@ mod test {
                         make_instruction(Op::GetLocal, &vec![1]),
                         make_instruction(Op::Add, &vec![]),
                         make_instruction(Op::ReturnValue, &vec![]),
-                    ])})),
+                    ]), num_locals: 2})),
                 ],
                 expected_instructions: vec![
                     make_instruction(Op::Constant, &vec![2]),
