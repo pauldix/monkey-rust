@@ -65,6 +65,8 @@ pub enum Op {
     Call,
     ReturnValue,
     Return,
+    GetLocal,
+    SetLocal,
 }
 
 impl Op {
@@ -94,6 +96,8 @@ impl Op {
             Op::Call => "OpCall",
             Op::ReturnValue => "OpReturnValue",
             Op::Return => "OpReturn",
+            Op::GetLocal => "OpGetLocal",
+            Op::SetLocal => "OpSetLocal",
         }
     }
 
@@ -106,6 +110,7 @@ impl Op {
             Op::False | Op::Equal | Op::NotEqual |
             Op::GreaterThan | Op::Minus | Op::Bang | Op::Null |
             Op::Index | Op::Call | Op::ReturnValue | Op::Return => vec![],
+            Op::GetLocal | Op::SetLocal => vec![1],
         }
     }
 }
@@ -119,6 +124,9 @@ pub fn make_instruction(op: Op, operands: &Vec<usize>) -> Vec<u8> {
         match width {
             2 => {
                 instruction.write_u16::<BigEndian>(*o as u16).unwrap()
+            },
+            1 => {
+                instruction.write_u8(*o as u8).unwrap()
             },
             _ => panic!("unsupported operand width {}", width),
         };
@@ -135,7 +143,11 @@ pub fn read_operands(op: &Op, instructions: &[u8]) -> (Vec<usize>, usize) {
         match width {
             2 => {
                 operands.push(BigEndian::read_u16(&instructions[offset..offset+2]) as usize);
-                offset = offset + 2;
+                offset += 2;
+            },
+            1 => {
+                operands.push(instructions[offset] as usize);
+                offset += 1;
             },
             _ => panic!("width not supported for operand")
         }
@@ -159,6 +171,7 @@ mod test {
         let tests = vec![
             Test{op: Op::Constant, operands: vec![65534], expected: vec![Op::Constant as u8, 255, 254]},
             Test{op: Op::Add, operands: vec![], expected: vec![Op::Add as u8]},
+            Test{op: Op::GetLocal, operands: vec![255], expected: vec![Op::GetLocal as u8, 255]},
         ];
 
         for t in tests {
@@ -190,12 +203,13 @@ mod test {
 
         let tests = vec![
             Test{op: Op::Constant, operands: vec![65535], bytes_read: 2},
+            Test{op: Op::GetLocal, operands: vec![255], bytes_read: 1},
         ];
 
         for t in tests {
-            let instruction = make_instruction(t.op, &t.operands);
+            let instruction = make_instruction(t.op.clone(), &t.operands);
 
-            let (operands_read, n) = read_operands(&Op::Constant, &instruction[1..]);
+            let (operands_read, n) = read_operands(&t.op, &instruction[1..]);
             assert_eq!(n, t.bytes_read);
             assert_eq!(operands_read, t.operands);
         }

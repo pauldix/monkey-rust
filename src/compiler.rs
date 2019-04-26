@@ -6,6 +6,7 @@ use crate::token::Token;
 use std::{error, fmt};
 use std::fmt::Display;
 use std::rc::Rc;
+use std::cell::RefCell;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 
@@ -32,6 +33,7 @@ impl EmittedInstruction {
 #[derive(Eq, PartialEq, Debug)]
 pub enum SymbolScope {
     Global,
+    Local,
 }
 
 #[derive(Eq, PartialEq, Debug)]
@@ -42,6 +44,7 @@ pub struct Symbol {
 }
 
 pub struct SymbolTable {
+    outer: Option<Rc<RefCell<SymbolTable>>>,
     store: HashMap<String, Rc<Symbol>>,
     num_definitions: usize,
 }
@@ -49,13 +52,27 @@ pub struct SymbolTable {
 impl SymbolTable {
     pub fn new() -> SymbolTable {
         SymbolTable{
+            outer: None,
+            store: HashMap::new(),
+            num_definitions: 0,
+        }
+    }
+
+    pub fn new_enclosed_symbol_table(outer: &Rc<RefCell<SymbolTable>>) -> SymbolTable {
+        SymbolTable{
+            outer: Some(Rc::clone(outer)),
             store: HashMap::new(),
             num_definitions: 0,
         }
     }
 
     fn define(&mut self, name: &str) -> Rc<Symbol> {
-        let symbol = Rc::new(Symbol{name: name.to_string(), scope: SymbolScope::Global, index: self.num_definitions});
+        let scope = match &self.outer {
+            Some(_) => SymbolScope::Local,
+            _ => SymbolScope::Global,
+        };
+        let symbol = Rc::new(Symbol{name: name.to_string(), scope, index: self.num_definitions});
+
         self.store.insert(name.to_string(), Rc::clone(&symbol));
         self.num_definitions += 1;
         symbol
@@ -64,7 +81,10 @@ impl SymbolTable {
     fn resolve(&self, name: &str) -> Option<Rc<Symbol>> {
         match self.store.get(name) {
             Some(sym) => Some(Rc::clone(&sym)),
-            _ => None,
+            None => match &self.outer {
+                Some(outer) => outer.as_ref().borrow().resolve(name),
+                None => None,
+            },
         }
     }
 }
@@ -989,6 +1009,143 @@ mod test {
                 }
             },
             None => panic!("previous instruction not in scope"),
+        }
+    }
+
+    #[test]
+    fn let_statement_scopes() {
+        let tests = vec![
+            CompilerTestCase{
+                input: "let num = 55; fn() { num }",
+                expected_constants: vec![
+                    Object::Int(55),
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::GetGlobal, &vec![0]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ])})),
+                ],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::SetGobal, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "fn() { let num = 55; num }",
+                expected_constants: vec![
+                    Object::Int(55),
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::Constant, &vec![0]),
+                        make_instruction(Op::SetLocal, &vec![0]),
+                        make_instruction(Op::GetLocal, &vec![0]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ])})),
+                ],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "fn() { let a = 55; let b = 77; a + b}",
+                expected_constants: vec![
+                    Object::Int(55),
+                    Object::Int(77),
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::Constant, &vec![0]),
+                        make_instruction(Op::SetLocal, &vec![0]),
+                        make_instruction(Op::Constant, &vec![1]),
+                        make_instruction(Op::SetLocal, &vec![1]),
+                        make_instruction(Op::GetLocal, &vec![0]),
+                        make_instruction(Op::GetLocal, &vec![1]),
+                        make_instruction(Op::Add, &vec![]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ])})),
+                ],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![2]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+        ];
+
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn resolve_local() {
+        let mut global = Rc::new(RefCell::new(SymbolTable::new()));
+        global.borrow_mut().define("a");
+        global.borrow_mut().define("b");
+
+        let mut local = SymbolTable::new_enclosed_symbol_table(&global);
+        local.define("c");
+        local.define("d");
+
+        let tests = vec![
+            ("a", SymbolScope::Global, 0),
+            ("b", SymbolScope::Global, 1),
+            ("c", SymbolScope::Local, 0),
+            ("d", SymbolScope::Local, 1),
+        ];
+
+        for (name, scope, index) in tests {
+            match local.resolve(name) {
+                Some(symbol) => {
+                    if symbol.scope != scope {
+                        panic!("expected scope {:?} on symbol {:?} but got {:?}", scope, name, symbol.scope);
+                    }
+                    if symbol.index != index {
+                        panic!("expected index {} on symbol {:?} but got {}", index, symbol, symbol.index);
+                    }
+                },
+                _ => panic!("couldn't resolve symbol: {}", name),
+            }
+        }
+    }
+
+    #[test]
+    fn resolve_nested_local() {
+        let mut global = Rc::new(RefCell::new(SymbolTable::new()));
+        global.borrow_mut().define("a");
+        global.borrow_mut().define("b");
+        let mut local = Rc::new(RefCell::new(SymbolTable::new_enclosed_symbol_table(&global)));
+        local.borrow_mut().define("c");
+        local.borrow_mut().define("d");
+        let mut nested_local = Rc::new(RefCell::new(SymbolTable::new_enclosed_symbol_table(&local)));
+        nested_local.borrow_mut().define("e");
+        nested_local.borrow_mut().define("f");
+
+        let tests = vec![
+            (local, vec![
+                ("a", SymbolScope::Global, 0),
+                ("b", SymbolScope::Global, 1),
+                ("c", SymbolScope::Local, 0),
+                ("d", SymbolScope::Local, 1),
+            ]),
+            (nested_local, vec![
+                ("a", SymbolScope::Global, 0),
+                ("b", SymbolScope::Global, 1),
+                ("e", SymbolScope::Local, 0),
+                ("f", SymbolScope::Local, 1),
+            ]),
+        ];
+
+        for (table, expected) in tests {
+            for (name, scope, index) in expected {
+                match table.borrow_mut().resolve(name) {
+                    Some(symbol) => {
+                        if symbol.scope != scope {
+                            panic!("expected scope {:?} on symbol {:?} but got {:?}", scope, name, symbol.scope);
+                        }
+                        if symbol.index != index {
+                            panic!("expected index {} on symbol {:?} but got {}", index, symbol, symbol.index);
+                        }
+                    },
+                    _ => panic!("couldn't resolve symbol: {}", name),
+                }
+            }
         }
     }
 
