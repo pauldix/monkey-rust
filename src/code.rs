@@ -39,7 +39,7 @@ impl InstructionsFns for Instructions {
 
 
 #[repr(u8)]
-#[derive(Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone)]
 pub enum Op {
     Constant,
     Add,
@@ -109,8 +109,8 @@ impl Op {
             Op::Div | Op::Pop | Op::True |
             Op::False | Op::Equal | Op::NotEqual |
             Op::GreaterThan | Op::Minus | Op::Bang | Op::Null |
-            Op::Index | Op::Call | Op::ReturnValue | Op::Return => vec![],
-            Op::GetLocal | Op::SetLocal => vec![1],
+            Op::Index | Op::ReturnValue | Op::Return => vec![],
+            Op::GetLocal | Op::SetLocal | Op::Call => vec![1],
         }
     }
 }
@@ -172,6 +172,7 @@ mod test {
             Test{op: Op::Constant, operands: vec![65534], expected: vec![Op::Constant as u8, 255, 254]},
             Test{op: Op::Add, operands: vec![], expected: vec![Op::Add as u8]},
             Test{op: Op::GetLocal, operands: vec![255], expected: vec![Op::GetLocal as u8, 255]},
+            Test{op: Op::Call, operands: vec![255], expected: vec![Op::Call as u8, 255]},
         ];
 
         for t in tests {

@@ -274,7 +274,7 @@ impl Compiler {
 
                 self.eval_block_statement(&ifexp.consequence);
 
-                if self.last_is_pop() {
+                if self.last_instruction_is(Op::Pop) {
                     self.remove_last_instruction();
                 }
 
@@ -285,7 +285,7 @@ impl Compiler {
                 if let Some(alternative) = &ifexp.alternative {
                     self.eval_block_statement(alternative)?;
 
-                    if self.last_is_pop() {
+                    if self.last_instruction_is(Op::Pop) {
                         self.remove_last_instruction();
                     }
                 } else {
@@ -330,22 +330,34 @@ impl Compiler {
             ast::Expression::Function(func) => {
                 self.enter_scope();
 
+                for arg in &func.parameters {
+                    self.symbol_table.define(&arg.name);
+                }
+
                 self.eval_block_statement(&func.body);
 
-                if self.last_is_pop() {
+                if self.last_instruction_is(Op::Pop) {
                     self.replace_last_pop_with_return();
+                }
+                if !self.last_instruction_is(Op::ReturnValue) {
+                    self.emit(Op::Return, &vec![]);
                 }
 
                 let num_locals = self.symbol_table.num_definitions;
 
                 let instructions = self.leave_scope();
-                let compiled_func = Object::CompiledFunction(Rc::new(CompiledFunction{instructions, num_locals}));
+                let compiled_func = Object::CompiledFunction(Rc::new(CompiledFunction{instructions, num_locals, num_parameters: func.parameters.len()}));
                 let const_pos= self.add_constant(compiled_func);
                 self.emit(Op::Constant, &vec![const_pos]);
             },
             ast::Expression::Call(exp) => {
                 self.eval_expression(&exp.function);
-                self.emit(Op::Call, &vec![]);
+
+                for arg in &exp.arguments {
+                    self.eval_expression(arg);
+                }
+
+                self.emit(Op::Call, &vec![exp.arguments.len()]);
             },
             _ => panic!("not implemented {:?}", exp)
         }
@@ -366,10 +378,11 @@ impl Compiler {
         }
     }
 
-    fn last_is_pop(&self) -> bool {
-        match &self.scopes[self.scope_index].last_instruction {
-            Some(ins) => ins.is_pop(),
-            None => false,
+    fn last_instruction_is(&self, op: Op) -> bool {
+        if let Some(ins) = &self.scopes[self.scope_index].last_instruction {
+            ins.op_code == op
+        } else {
+            false
         }
     }
 
@@ -912,7 +925,7 @@ mod test {
                         make_instruction(Op::Constant, &vec![1]),
                         make_instruction(Op::Add, &vec![]),
                         make_instruction(Op::ReturnValue, &vec![])
-                    ]), num_locals: 0})),
+                    ]), num_locals: 0, num_parameters: 0})),
                 ],
                 expected_instructions: vec![
                     make_instruction(Op::Constant, &vec![2]),
@@ -934,11 +947,11 @@ mod test {
                     Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
                         make_instruction(Op::Constant, &vec![0]),
                         make_instruction(Op::ReturnValue, &vec![]),
-                    ]), num_locals: 0})),
+                    ]), num_locals: 0, num_parameters: 0})),
                 ],
                 expected_instructions: vec![
                     make_instruction(Op::Constant, &vec![1]),
-                    make_instruction(Op::Call, &vec![]),
+                    make_instruction(Op::Call, &vec![0]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
             },
@@ -949,13 +962,57 @@ mod test {
                     Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
                         make_instruction(Op::Constant, &vec![0]),
                         make_instruction(Op::ReturnValue, &vec![]),
-                    ]), num_locals: 0})),
+                    ]), num_locals: 0, num_parameters: 0})),
                 ],
                 expected_instructions: vec![
                     make_instruction(Op::Constant, &vec![1]),
                     make_instruction(Op::SetGobal, &vec![0]),
                     make_instruction(Op::GetGlobal, &vec![0]),
-                    make_instruction(Op::Call, &vec![]),
+                    make_instruction(Op::Call, &vec![0]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "let oneArg = fn(a) { a }; oneArg(24);",
+                expected_constants: vec![
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::GetLocal, &vec![0]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ]), num_locals: 1, num_parameters: 1})),
+                    Object::Int(24),
+                ],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::SetGobal, &vec![0]),
+                    make_instruction(Op::GetGlobal, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Call, &vec![1]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "let manyArg = fn(a, b, c) { a; b; c }; manyArg(24, 25, 26);",
+                expected_constants: vec![
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::GetLocal, &vec![0]),
+                        make_instruction(Op::Pop, &vec![]),
+                        make_instruction(Op::GetLocal, &vec![1]),
+                        make_instruction(Op::Pop, &vec![]),
+                        make_instruction(Op::GetLocal, &vec![2]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ]), num_locals: 3, num_parameters: 3})),
+                    Object::Int(24),
+                    Object::Int(25),
+                    Object::Int(26),
+                ],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::SetGobal, &vec![0]),
+                    make_instruction(Op::GetGlobal, &vec![0]),
+                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Constant, &vec![2]),
+                    make_instruction(Op::Constant, &vec![3]),
+                    make_instruction(Op::Call, &vec![3]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
             },
@@ -1057,7 +1114,7 @@ mod test {
                     Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
                         make_instruction(Op::GetGlobal, &vec![0]),
                         make_instruction(Op::ReturnValue, &vec![]),
-                    ]), num_locals: 0})),
+                    ]), num_locals: 0, num_parameters: 0})),
                 ],
                 expected_instructions: vec![
                     make_instruction(Op::Constant, &vec![0]),
@@ -1075,7 +1132,7 @@ mod test {
                         make_instruction(Op::SetLocal, &vec![0]),
                         make_instruction(Op::GetLocal, &vec![0]),
                         make_instruction(Op::ReturnValue, &vec![]),
-                    ]), num_locals: 1})),
+                    ]), num_locals: 1, num_parameters: 0})),
                 ],
                 expected_instructions: vec![
                     make_instruction(Op::Constant, &vec![1]),
@@ -1096,7 +1153,7 @@ mod test {
                         make_instruction(Op::GetLocal, &vec![1]),
                         make_instruction(Op::Add, &vec![]),
                         make_instruction(Op::ReturnValue, &vec![]),
-                    ]), num_locals: 2})),
+                    ]), num_locals: 2, num_parameters: 0})),
                 ],
                 expected_instructions: vec![
                     make_instruction(Op::Constant, &vec![2]),

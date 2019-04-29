@@ -237,6 +237,7 @@ impl Hash for Function {
 pub struct CompiledFunction {
     pub instructions: code::Instructions,
     pub num_locals: usize,
+    pub num_parameters: usize,
 }
 
 impl CompiledFunction {

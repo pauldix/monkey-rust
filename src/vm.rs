@@ -43,9 +43,9 @@ impl<'a> VM<'a> {
         stack.resize(STACK_SIZE, Rc::new(Object::Null));
 
         let mut frames = Vec::with_capacity(MAX_FRAMES);
-        frames.resize(MAX_FRAMES, Frame{func: Rc::new(CompiledFunction{instructions: vec![], num_locals: 0}), ip: 24, base_pointer: 0});
+        frames.resize(MAX_FRAMES, Frame{func: Rc::new(CompiledFunction{instructions: vec![], num_locals: 0, num_parameters: 0}), ip: 24, base_pointer: 0});
 
-        let main_func = Rc::new(CompiledFunction{instructions, num_locals: 0});
+        let main_func = Rc::new(CompiledFunction{instructions, num_locals: 0, num_parameters: 0});
         let main_frame = Frame{func: main_func, ip: 0, base_pointer: 0};
         frames[0] = main_frame;
 
@@ -206,16 +206,9 @@ impl<'a> VM<'a> {
                     self.execute_index_expression(left, index);
                 },
                 Op::Call => {
-                    let base_pointer = self.sp;
-                    let frame = match &*self.stack[self.sp - 1] {
-                        Object::CompiledFunction(ref func) => {
-                            Frame{func: Rc::clone(&func), ip: 0, base_pointer: self.sp}
-                        },
-                        obj => panic!("called non-function {:?}", obj),
-                    };
-                    let sp = base_pointer + frame.func.num_locals;
-                    self.push_frame(frame);
-                    self.sp = sp;
+                    let num_args = self.read_u8_at(ip + 1) as usize;
+                    self.set_ip(ip + 2);
+                    self.call_function(num_args);
                 },
                 Op::ReturnValue => {
                     let return_value = self.pop();
@@ -231,6 +224,23 @@ impl<'a> VM<'a> {
                 _ => panic!("unsupported op {:?}", op),
             }
         }
+    }
+
+    fn call_function(&mut self, num_args: usize) {
+        let frame = match &*self.stack[self.sp - 1 - num_args] {
+            Object::CompiledFunction(ref func) => {
+                Frame{func: Rc::clone(&func), ip: 0, base_pointer: self.sp - num_args}
+            },
+            obj => panic!("called non-function {:?}", obj),
+        };
+
+        if num_args != frame.func.num_parameters {
+            panic!("function expects {} arguments but got {}", frame.func.num_parameters, num_args);
+        }
+
+        let sp = frame.base_pointer + frame.func.num_locals;
+        self.push_frame(frame);
+        self.sp = sp;
     }
 
     fn execute_index_expression(&mut self, left: Rc<Object>, index: Rc<Object>) {
@@ -686,6 +696,78 @@ mod test {
 
         run_vm_tests(tests);
     }
+
+    #[test]
+    fn calling_functions_with_arguments_and_bindings() {
+        let tests = vec![
+            VMTestCase{
+                input: "let identity = fn(a) { a; }; identity(4);",
+                expected: Object::Int(4),
+            },
+            VMTestCase{
+                input: "let sum = fn(a, b) { a + b; }; sum(1, 2);",
+                expected: Object::Int(3),
+            },
+            VMTestCase{
+                input: "let sum = fn(a, b) {
+                            let c = a + b;
+                            c;
+                        };
+                        sum(1, 2);",
+                expected: Object::Int(3),
+            },
+            VMTestCase{
+                input: "let sum = fn(a, b) {
+                            let c = a + b;
+                            c;
+                        };
+                        sum(1, 2) + sum(3, 4);",
+                expected: Object::Int(10),
+            },
+            VMTestCase{
+                input: "let sum = fn(a, b) {
+                            let c = a + b;
+                            c;
+                        };
+                        let outer = fn() {
+                            sum(1, 2) + sum(3, 4);
+                        };
+                        outer();",
+                expected: Object::Int(10),
+            },
+            VMTestCase{
+                input: "let globalNum = 10;
+
+                        let sum = fn(a, b) {
+                            let c = a + b;
+                            c + globalNum;
+                        };
+
+                        let outer = fn() {
+                            sum(1, 2) + sum(3, 4) + globalNum;
+                        };
+
+                        outer() + globalNum;",
+                expected: Object::Int(50),
+            }
+        ];
+
+        run_vm_tests(tests);
+    }
+
+    // commented this out because the should_panic macro doesn't work with the CLION test runner
+//    #[test]
+//    #[should_panic(expected = "function expects 0 arguments but got 1")]
+//    fn calling_functions_with_wrong_arguments() {
+//        let tests = vec![
+//            VMTestCase{
+//                input: "fn() { 1; }(1);",
+//                expected: Object::String("asdf".to_string()),
+//            },
+//        ];
+//
+//        run_vm_tests(tests);
+//    }
 
     fn hash_to_object(h: HashMap<i64,i64>) -> Object {
         let hash = HashMap::new();
