@@ -67,6 +67,7 @@ pub enum Op {
     Return,
     GetLocal,
     SetLocal,
+    GetBuiltin,
 }
 
 impl Op {
@@ -98,6 +99,7 @@ impl Op {
             Op::Return => "OpReturn",
             Op::GetLocal => "OpGetLocal",
             Op::SetLocal => "OpSetLocal",
+            Op::GetBuiltin => "OpGetBuiltin",
         }
     }
 
@@ -110,7 +112,7 @@ impl Op {
             Op::False | Op::Equal | Op::NotEqual |
             Op::GreaterThan | Op::Minus | Op::Bang | Op::Null |
             Op::Index | Op::ReturnValue | Op::Return => vec![],
-            Op::GetLocal | Op::SetLocal | Op::Call => vec![1],
+            Op::GetLocal | Op::SetLocal | Op::Call | Op::GetBuiltin => vec![1],
         }
     }
 }

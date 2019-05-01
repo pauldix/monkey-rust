@@ -6,6 +6,7 @@ use std::rc::Rc;
 use crate::ast;
 use crate::code;
 use code::InstructionsFns;
+use enum_iterator::IntoEnumIterator;
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum Object {
@@ -79,14 +80,15 @@ impl Hash for Array {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+#[repr(u8)]
+#[derive(Hash, Eq, PartialEq, Clone, Debug, IntoEnumIterator)]
 pub enum Builtin {
     Len,
+    Puts,
     First,
     Last,
     Rest,
     Push,
-    Puts,
 }
 
 impl Builtin {
@@ -192,6 +194,10 @@ impl Builtin {
                 Ok(Rc::new(Object::Null))
             }
         }
+    }
+
+    pub fn string(&self) -> String {
+        self.inspect()
     }
 
     fn inspect(&self) -> String {

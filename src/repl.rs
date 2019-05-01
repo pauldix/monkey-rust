@@ -8,6 +8,7 @@ pub fn start<R: io::BufRead, W: io::Write>(mut reader: R, mut writer: W) -> io::
     let mut constants = vec![];
     let mut globals = vm::VM::new_globals();
     let mut symbol_table = SymbolTable::new();
+    symbol_table.load_builtins();
 
     loop {
         writer.write(b"> ");

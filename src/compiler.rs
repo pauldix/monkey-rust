@@ -1,4 +1,4 @@
-use crate::object::{Object, CompiledFunction};
+use crate::object::{Object, CompiledFunction, Builtin};
 use crate::code::{Instructions, InstructionsFns, Op, make_instruction};
 use crate::parser::parse;
 use crate::ast;
@@ -9,6 +9,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::borrow::Borrow;
 use std::collections::HashMap;
+use enum_iterator::IntoEnumIterator;
 
 pub struct Bytecode<'a> {
     pub instructions: &'a Instructions,
@@ -34,6 +35,7 @@ impl EmittedInstruction {
 pub enum SymbolScope {
     Global,
     Local,
+    Builtin,
 }
 
 #[derive(Eq, PartialEq, Debug, Clone)]
@@ -79,6 +81,19 @@ impl SymbolTable {
         symbol
     }
 
+    fn define_builtin(&mut self, name: String, index: usize) -> Rc<Symbol> {
+        let symbol = Rc::new(Symbol{name: name.clone(), scope: SymbolScope::Builtin, index: index});
+        self.store.insert(name, Rc::clone(&symbol));
+        symbol
+    }
+
+    pub fn load_builtins(&mut self) {
+        for builtin in Builtin::into_enum_iter() {
+            self.define_builtin(builtin.string(), builtin as usize);
+        }
+
+    }
+
     fn resolve(&self, name: &str) -> Option<Rc<Symbol>> {
         match self.store.get(name) {
             Some(sym) => Some(Rc::clone(&sym)),
@@ -106,9 +121,12 @@ pub struct Compiler {
 
 impl Compiler {
     pub fn new() -> Compiler {
+        let mut symbol_table = SymbolTable::new();
+        symbol_table.load_builtins();
+
         Compiler{
             constants: vec![],
-            symbol_table: SymbolTable::new(),
+            symbol_table,
             scopes: vec![CompilationScope{
                 instructions: vec![],
                 last_instruction: None,
@@ -203,7 +221,8 @@ impl Compiler {
 
                 match &symbol.scope {
                     SymbolScope::Global => self.emit(Op::SetGobal, &vec![symbol.index]),
-                    SymbolScope::Local => self.emit(Op::SetLocal, &vec![symbol.index])
+                    SymbolScope::Local => self.emit(Op::SetLocal, &vec![symbol.index]),
+                    SymbolScope::Builtin => return Err(CompileError{message: "can't assign to builtin function name".to_string()}),
                 };
             },
         }
@@ -301,6 +320,7 @@ impl Compiler {
                         match &sym.scope {
                             SymbolScope::Global => self.emit(Op::GetGlobal, &vec![sym.index]),
                             SymbolScope::Local => self.emit(Op::GetLocal, &vec![sym.index]),
+                            SymbolScope::Builtin => self.emit(Op::GetBuiltin, &vec![sym.index]),
                         };
                     },
                     _ => panic!("symbol not resolved {:?}", name)
@@ -1236,6 +1256,73 @@ mod test {
                         }
                     },
                     _ => panic!("couldn't resolve symbol: {}", name),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn builtins() {
+        let tests = vec![
+            CompilerTestCase{
+                input: "len([]); push([], 1);",
+                expected_constants: vec![Object::Int(1)],
+                expected_instructions: vec![
+                    make_instruction(Op::GetBuiltin, &vec![0]),
+                    make_instruction(Op::Array, &vec![0]),
+                    make_instruction(Op::Call, &vec![1]),
+                    make_instruction(Op::Pop, &vec![]),
+                    make_instruction(Op::GetBuiltin, &vec![5]),
+                    make_instruction(Op::Array, &vec![0]),
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Call, &vec![2]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "fn() { len([]) }",
+                expected_constants: vec![
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::GetBuiltin, &vec![0]),
+                        make_instruction(Op::Array, &vec![0]),
+                        make_instruction(Op::Call, &vec![1]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ]), num_locals: 0, num_parameters: 0})),
+                ],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            }
+        ];
+
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn define_resolve_builtins() {
+        let mut global = SymbolTable::new();
+        let expected = vec![
+            Symbol{name: "a".to_string(), scope: SymbolScope::Builtin, index: 0},
+            Symbol{name: "c".to_string(), scope: SymbolScope::Builtin, index: 1},
+            Symbol{name: "e".to_string(), scope: SymbolScope::Builtin, index: 2},
+            Symbol{name: "f".to_string(), scope: SymbolScope::Builtin, index: 3},
+        ];
+
+        for sym in &expected {
+            global.define_builtin(sym.name.clone(), sym.index);
+        }
+
+        let first_local = SymbolTable::new_enclosed_symbol_table(global.clone());
+        let second_local = SymbolTable::new_enclosed_symbol_table(first_local.clone());
+
+        for table in vec![global, first_local, second_local] {
+            for sym in &expected {
+                match table.resolve(&sym.name) {
+                    Some(s) => if s != Rc::new(sym.clone()) {
+                        panic!("exp: {:?}, got: {:?}", sym, s);
+                    },
+                    None => panic!("couldn't resolve symbol {}", sym.name),
                 }
             }
         }
