@@ -1,5 +1,5 @@
 use crate::compiler::Compiler;
-use crate::object::{Object, Array, MonkeyHash, CompiledFunction};
+use crate::object::{Object, Array, MonkeyHash, CompiledFunction, Builtin};
 use crate::parser::parse;
 use crate::code::{Instructions, Op};
 use byteorder;
@@ -208,7 +208,7 @@ impl<'a> VM<'a> {
                 Op::Call => {
                     let num_args = self.read_u8_at(ip + 1) as usize;
                     self.set_ip(ip + 2);
-                    self.call_function(num_args);
+                    self.execute_call(num_args);
                 },
                 Op::ReturnValue => {
                     let return_value = self.pop();
@@ -221,19 +221,43 @@ impl<'a> VM<'a> {
                     self.sp = base_pointer - 1;
                     self.push(Rc::new(Object::Null));
                 },
+                Op::GetBuiltin => {
+                    let builtin_index = self.read_u8_at(ip + 1);
+                    let builtin: Builtin = unsafe { ::std::mem::transmute(builtin_index) };
+                    self.set_ip(ip + 2);
+                    self.push(Rc::new(Object::Builtin(builtin)));
+                },
                 _ => panic!("unsupported op {:?}", op),
             }
         }
     }
 
-    fn call_function(&mut self, num_args: usize) {
-        let frame = match &*self.stack[self.sp - 1 - num_args] {
-            Object::CompiledFunction(ref func) => {
-                Frame{func: Rc::clone(&func), ip: 0, base_pointer: self.sp - num_args}
-            },
-            obj => panic!("called non-function {:?}", obj),
-        };
+    fn execute_call(&mut self, num_args: usize) {
+//        match &*self.stack[self.sp - 1 - num_args] {
+//            Object::CompiledFunction(ref func) => {
+//                let frame = Frame{func: Rc::clone(func), ip: 0, base_pointer: self.sp - num_args};
+//                self.call_function(frame, num_args);
+//            },
+//            Object::Builtin(ref builtin) => {
+//                self.call_builtin(builtin, num_args);
+//            },
+//            obj => panic!("called non-function {:?}", obj),
+//        }
 
+        if let Some(frame) = match &*self.stack[self.sp - 1 - num_args] {
+            Object::CompiledFunction(ref func) => {
+                Some(Frame{func: Rc::clone(func), ip: 0, base_pointer: self.sp - num_args})
+            },
+            _ => None,
+        } { self.call_function(frame, num_args); } else if let Some(builtin) = match &*self.stack[self.sp - 1 - num_args] {
+            Object::Builtin(builtin) => Some(builtin),
+            _ => None,
+        } { self.call_builtin(*builtin, num_args) } else {
+            panic!("called non-function {:?}", self.stack[self.sp - 1 - num_args]);
+        }
+    }
+
+    fn call_function(&mut self, frame: Frame, num_args: usize) {
         if num_args != frame.func.num_parameters {
             panic!("function expects {} arguments but got {}", frame.func.num_parameters, num_args);
         }
@@ -241,6 +265,17 @@ impl<'a> VM<'a> {
         let sp = frame.base_pointer + frame.func.num_locals;
         self.push_frame(frame);
         self.sp = sp;
+    }
+
+    fn call_builtin(&mut self, builtin: Builtin, num_args: usize) {
+        let args = &self.stack[self.sp - num_args..self.sp].to_vec();
+        let result = builtin.apply(args);
+        self.sp = self.sp - num_args - 1;
+
+        match result {
+            Ok(obj) => self.push(obj),
+            Err(err) => panic!("error calling builtin: {:?}", err),
+        }
     }
 
     fn execute_index_expression(&mut self, left: Rc<Object>, index: Rc<Object>) {
@@ -750,6 +785,27 @@ mod test {
                         outer() + globalNum;",
                 expected: Object::Int(50),
             }
+        ];
+
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn builtin_functions() {
+        let tests = vec![
+            VMTestCase{input: r#"len("")"#, expected: Object::Int(0)},
+            VMTestCase{input: r#"len("four")"#, expected: Object::Int(4)},
+            VMTestCase{input: r#"len("hello world")"#, expected: Object::Int(11)},
+            VMTestCase{input: "len([1, 2, 3])", expected: Object::Int(3)},
+            VMTestCase{input: "len([])", expected: Object::Int(0)},
+            VMTestCase{input: r#"puts("hello", "world!")"#, expected: Object::Null},
+            VMTestCase{input: "first([1, 2, 3])", expected: Object::Int(1)},
+            VMTestCase{input: "first([])", expected: Object::Null},
+            VMTestCase{input: "last([1, 2, 3])", expected: Object::Int(3)},
+            VMTestCase{input: "last([])", expected: Object::Null},
+            VMTestCase{input: "rest([1, 2, 3])", expected: Object::Array(Rc::new(Array{elements: vec![Rc::new(Object::Int(2)), Rc::new(Object::Int(3))]}))},
+            VMTestCase{input: "rest([])", expected: Object::Array(Rc::new(Array{elements: vec![]}))},
+            VMTestCase{input: "push([], 1)", expected: Object::Array(Rc::new(Array{elements: vec![Rc::new(Object::Int(1))]}))},
         ];
 
         run_vm_tests(tests);

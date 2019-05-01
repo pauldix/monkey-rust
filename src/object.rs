@@ -81,7 +81,7 @@ impl Hash for Array {
 }
 
 #[repr(u8)]
-#[derive(Hash, Eq, PartialEq, Clone, Debug, IntoEnumIterator)]
+#[derive(Hash, Eq, PartialEq, Clone, Debug, IntoEnumIterator, Copy)]
 pub enum Builtin {
     Len,
     Puts,
