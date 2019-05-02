@@ -180,9 +180,9 @@ impl Compiler {
 
     pub fn compile(&mut self, node: ast::Node) -> Result {
         match node {
-            ast::Node::Program(prog) => self.eval_program(&prog)?,
-            ast::Node::Statement(stmt) => self.eval_statement(&stmt)?,
-            ast::Node::Expression(exp) => self.eval_expression(&exp)?,
+            ast::Node::Program(prog) => self.compile_program(&prog)?,
+            ast::Node::Statement(stmt) => self.compile_statement(&stmt)?,
+            ast::Node::Expression(exp) => self.compile_expression(&exp)?,
         }
 
         Ok(self.bytecode())
@@ -226,27 +226,27 @@ impl Compiler {
         return self.constants.len() - 1;
     }
 
-    fn eval_program(&mut self, prog: &ast::Program) -> ::std::result::Result<(), CompileError> {
+    fn compile_program(&mut self, prog: &ast::Program) -> ::std::result::Result<(), CompileError> {
         for stmt in &prog.statements {
-            self.eval_statement(stmt)?
+            self.compile_statement(stmt)?
         }
 
         Ok(())
     }
 
-    fn eval_statement(&mut self, stmt: &ast::Statement) -> ::std::result::Result<(), CompileError> {
+    fn compile_statement(&mut self, stmt: &ast::Statement) -> ::std::result::Result<(), CompileError> {
         match stmt {
             ast::Statement::Expression(exp) => {
-                self.eval_expression(&exp.expression)?;
+                self.compile_expression(&exp.expression)?;
                 // expressions put their value on the stack so this should be popped off since it doesn't get reused
                 self.emit(Op::Pop, &vec![]);
             },
             ast::Statement::Return(ret) => {
-                self.eval_expression(&ret.value);
+                self.compile_expression(&ret.value);
                 self.emit(Op::ReturnValue, &vec![]);
             },
             ast::Statement::Let(stmt) => {
-                self.eval_expression(&stmt.value)?;
+                self.compile_expression(&stmt.value)?;
 
                 let symbol = self.symbol_table.define(&stmt.name);
 
@@ -261,15 +261,15 @@ impl Compiler {
         Ok(())
     }
 
-    fn eval_block_statement(&mut self, stmt: &ast::BlockStatement) -> ::std::result::Result<(), CompileError> {
+    fn compile_block_statement(&mut self, stmt: &ast::BlockStatement) -> ::std::result::Result<(), CompileError> {
         for stmt in &stmt.statements {
-            self.eval_statement(stmt)?;
+            self.compile_statement(stmt)?;
         }
 
         Ok(())
     }
 
-    fn eval_expression(&mut self, exp: &ast::Expression) -> ::std::result::Result<(), CompileError> {
+    fn compile_expression(&mut self, exp: &ast::Expression) -> ::std::result::Result<(), CompileError> {
         match exp {
             ast::Expression::Integer(int) => {
                 let int = Object::Int(*int);
@@ -289,14 +289,14 @@ impl Compiler {
             },
             ast::Expression::Infix(exp) => {
                 if exp.operator == Token::Lt {
-                    self.eval_expression(&exp.right);
-                    self.eval_expression(&exp.left);
+                    self.compile_expression(&exp.right);
+                    self.compile_expression(&exp.left);
                     self.emit(Op::GreaterThan, &vec![]);
                     return Ok(());
                 }
 
-                self.eval_expression(&exp.left);
-                self.eval_expression(&exp.right);
+                self.compile_expression(&exp.left);
+                self.compile_expression(&exp.right);
 
                 match exp.operator {
                     Token::Plus => self.emit(Op::Add, &vec![]),
@@ -310,7 +310,7 @@ impl Compiler {
                 };
             },
             ast::Expression::Prefix(exp) => {
-                self.eval_expression(&exp.right);
+                self.compile_expression(&exp.right);
 
                 match exp.operator {
                     Token::Minus => self.emit(Op::Minus, &vec![]),
@@ -319,11 +319,11 @@ impl Compiler {
                 };
             },
             ast::Expression::If(ifexp) => {
-                self.eval_expression(&ifexp.condition);
+                self.compile_expression(&ifexp.condition);
 
                 let jump_not_truthy_pos = self.emit(Op::JumpNotTruthy, &vec![9999]);
 
-                self.eval_block_statement(&ifexp.consequence);
+                self.compile_block_statement(&ifexp.consequence);
 
                 if self.last_instruction_is(Op::Pop) {
                     self.remove_last_instruction();
@@ -334,7 +334,7 @@ impl Compiler {
                 self.change_operand(jump_not_truthy_pos, after_consequence_pos);
 
                 if let Some(alternative) = &ifexp.alternative {
-                    self.eval_block_statement(alternative)?;
+                    self.compile_block_statement(alternative)?;
 
                     if self.last_instruction_is(Op::Pop) {
                         self.remove_last_instruction();
@@ -356,7 +356,7 @@ impl Compiler {
             },
             ast::Expression::Array(array) => {
                 for el in &array.elements {
-                    self.eval_expression(el)?;
+                    self.compile_expression(el)?;
                 }
                 self.emit(Op::Array, &vec![array.elements.len()]);
             },
@@ -364,14 +364,14 @@ impl Compiler {
                 let mut keys: Vec<&ast::Expression> = hash.pairs.keys().into_iter().collect();
                 keys.sort_by(|a, b| (*a).string().cmp(&(*b).string()));
                 for k in &keys {
-                    self.eval_expression(*k)?;
-                    self.eval_expression(hash.pairs.get(*k).unwrap())?;
+                    self.compile_expression(*k)?;
+                    self.compile_expression(hash.pairs.get(*k).unwrap())?;
                 };
                 self.emit(Op::Hash, &vec![keys.len() * 2]);
             },
             ast::Expression::Index(idx) => {
-                self.eval_expression(&idx.left)?;
-                self.eval_expression(&idx.index)?;
+                self.compile_expression(&idx.left)?;
+                self.compile_expression(&idx.index)?;
 
                 self.emit(Op::Index, &vec![]);
             },
@@ -382,7 +382,7 @@ impl Compiler {
                     self.symbol_table.define(&arg.name);
                 }
 
-                self.eval_block_statement(&func.body);
+                self.compile_block_statement(&func.body);
 
                 if self.last_instruction_is(Op::Pop) {
                     self.replace_last_pop_with_return();
@@ -404,10 +404,10 @@ impl Compiler {
                 self.emit(Op::Closure, &vec![func_index, free_symbols.len()]);
             },
             ast::Expression::Call(exp) => {
-                self.eval_expression(&exp.function);
+                self.compile_expression(&exp.function);
 
                 for arg in &exp.arguments {
-                    self.eval_expression(arg);
+                    self.compile_expression(arg);
                 }
 
                 self.emit(Op::Call, &vec![exp.arguments.len()]);
