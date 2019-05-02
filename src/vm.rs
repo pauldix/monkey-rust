@@ -8,7 +8,7 @@ use std::rc::Rc;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 
-const STACK_SIZE: usize = 10;
+const STACK_SIZE: usize = 2048;
 const GLOBAL_SIZE: usize = 65536;
 const MAX_FRAMES: usize = 1024;
 
@@ -884,6 +884,30 @@ mod test {
                     adder(8);",
                 expected: Object::Int(14),
             }
+        ];
+
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn recursive_fibonacci() {
+        let tests = vec![
+            VMTestCase{
+                input: "
+                    let fibonacci = fn(x) {
+                        if (x == 0) {
+                            return 0;
+                        } else {
+                            if (x == 1) {
+                                return 1;
+                            } else {
+                                fibonacci(x - 1) + fibonacci(x - 2);
+                            }
+                        }
+                    };
+                    fibonacci(15);",
+                expected: Object::Int(610),
+            },
         ];
 
         run_vm_tests(tests);

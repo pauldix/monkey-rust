@@ -246,9 +246,8 @@ impl Compiler {
                 self.emit(Op::ReturnValue, &vec![]);
             },
             ast::Statement::Let(stmt) => {
-                self.compile_expression(&stmt.value)?;
-
                 let symbol = self.symbol_table.define(&stmt.name);
+                self.compile_expression(&stmt.value)?;
 
                 match &symbol.scope {
                     SymbolScope::Global => self.emit(Op::SetGobal, &vec![symbol.index]),
