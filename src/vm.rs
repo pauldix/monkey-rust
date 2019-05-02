@@ -1,5 +1,5 @@
 use crate::compiler::Compiler;
-use crate::object::{Object, Array, MonkeyHash, CompiledFunction, Builtin};
+use crate::object::{Object, Array, MonkeyHash, CompiledFunction, Builtin, Closure};
 use crate::parser::parse;
 use crate::code::{Instructions, Op};
 use byteorder;
@@ -14,7 +14,7 @@ const MAX_FRAMES: usize = 1024;
 
 #[derive(Clone, Debug)]
 struct Frame {
-    func: Rc<CompiledFunction>,
+    cl: Rc<Closure>,
     ip: usize,
     base_pointer: usize,
 }
@@ -43,10 +43,22 @@ impl<'a> VM<'a> {
         stack.resize(STACK_SIZE, Rc::new(Object::Null));
 
         let mut frames = Vec::with_capacity(MAX_FRAMES);
-        frames.resize(MAX_FRAMES, Frame{func: Rc::new(CompiledFunction{instructions: vec![], num_locals: 0, num_parameters: 0}), ip: 24, base_pointer: 0});
+        let empty_frame = Frame{
+            cl: Rc::new(Closure{
+                func: Rc::new(CompiledFunction{
+                    instructions: vec![],
+                    num_locals: 0,
+                    num_parameters: 0}),
+                free: vec![]}),
+            ip: 24,
+            base_pointer: 0
+        };
+
+        frames.resize(MAX_FRAMES, empty_frame);
 
         let main_func = Rc::new(CompiledFunction{instructions, num_locals: 0, num_parameters: 0});
-        let main_frame = Frame{func: main_func, ip: 0, base_pointer: 0};
+        let main_closure = Rc::new(Closure{func: main_func, free: vec![]});
+        let main_frame = Frame{cl: main_closure, ip: 0, base_pointer: 0};
         frames[0] = main_frame;
 
         VM{
@@ -80,7 +92,7 @@ impl<'a> VM<'a> {
 
     fn continue_current_frame(&self) -> bool {
         let frame = &self.frames[self.frames_index];
-        return frame.ip < frame.func.instructions.len();
+        return frame.ip < frame.cl.func.instructions.len();
     }
 
     fn current_ip(&self) -> usize {
@@ -98,17 +110,17 @@ impl<'a> VM<'a> {
     }
 
     fn read_op_at(&self, ip: usize) -> Op {
-        let ins = &self.frames[self.frames_index].func.instructions;
+        let ins = &self.frames[self.frames_index].cl.func.instructions;
         unsafe { ::std::mem::transmute(*ins.get_unchecked(ip)) }
     }
 
     fn read_usize_at(&self, ip: usize) -> usize {
-        let ins = &self.frames[self.frames_index].func.instructions;
+        let ins = &self.frames[self.frames_index].cl.func.instructions;
         BigEndian::read_u16(&ins[ip..ip+2]) as usize
     }
 
     fn read_u8_at(&self, ip: usize) -> u8 {
-        let ins = &self.frames[self.frames_index].func.instructions;
+        let ins = &self.frames[self.frames_index].cl.func.instructions;
         *&ins[ip]
     }
 
@@ -227,29 +239,45 @@ impl<'a> VM<'a> {
                     self.set_ip(ip + 2);
                     self.push(Rc::new(Object::Builtin(builtin)));
                 },
+                Op::Closure => {
+                    let const_index = self.read_usize_at(ip + 1);
+                    let num_free = self.read_u8_at(ip + 3) as usize;
+                    self.set_ip(ip + 4);
+                    self.push_closure(const_index, num_free);
+                },
+                Op::GetFree => {
+                    let free_index = self.read_u8_at(ip + 1) as usize;
+                    self.set_ip(ip + 2);
+                    let obj = &self.frames[self.frames_index].cl.free[free_index];
+                    self.push(Rc::clone(obj));
+                },
                 _ => panic!("unsupported op {:?}", op),
             }
         }
     }
 
-    fn execute_call(&mut self, num_args: usize) {
-//        match &*self.stack[self.sp - 1 - num_args] {
-//            Object::CompiledFunction(ref func) => {
-//                let frame = Frame{func: Rc::clone(func), ip: 0, base_pointer: self.sp - num_args};
-//                self.call_function(frame, num_args);
-//            },
-//            Object::Builtin(ref builtin) => {
-//                self.call_builtin(builtin, num_args);
-//            },
-//            obj => panic!("called non-function {:?}", obj),
-//        }
+    fn push_closure(&mut self, const_index: usize, num_free: usize) {
+        match &*self.constants[const_index] {
+            Object::CompiledFunction(func) => {
+                let mut free = Vec::with_capacity(num_free);
+                for obj in &self.stack[self.sp-num_free..self.sp] {
+                    free.push(Rc::clone(obj));
+                }
+                self.sp = self.sp-num_free;
+                self.push(Rc::new(Object::Closure(Rc::new(Closure{func: Rc::clone(&func), free}))));
+            },
+            obj => panic!("not a function: {:?}", obj),
+        }
 
+    }
+
+    fn execute_call(&mut self, num_args: usize) {
         if let Some(frame) = match &*self.stack[self.sp - 1 - num_args] {
-            Object::CompiledFunction(ref func) => {
-                Some(Frame{func: Rc::clone(func), ip: 0, base_pointer: self.sp - num_args})
+            Object::Closure(ref cl) => {
+                Some(Frame{cl: Rc::clone(cl), ip: 0, base_pointer: self.sp - num_args})
             },
             _ => None,
-        } { self.call_function(frame, num_args); } else if let Some(builtin) = match &*self.stack[self.sp - 1 - num_args] {
+        } { self.call_closure(frame, num_args); } else if let Some(builtin) = match &*self.stack[self.sp - 1 - num_args] {
             Object::Builtin(builtin) => Some(builtin),
             _ => None,
         } { self.call_builtin(*builtin, num_args) } else {
@@ -257,12 +285,12 @@ impl<'a> VM<'a> {
         }
     }
 
-    fn call_function(&mut self, frame: Frame, num_args: usize) {
-        if num_args != frame.func.num_parameters {
-            panic!("function expects {} arguments but got {}", frame.func.num_parameters, num_args);
+    fn call_closure(&mut self, frame: Frame, num_args: usize) {
+        if num_args != frame.cl.func.num_parameters {
+            panic!("function expects {} arguments but got {}", frame.cl.func.num_parameters, num_args);
         }
 
-        let sp = frame.base_pointer + frame.func.num_locals;
+        let sp = frame.base_pointer + frame.cl.func.num_locals;
         self.push_frame(frame);
         self.sp = sp;
     }
@@ -806,6 +834,56 @@ mod test {
             VMTestCase{input: "rest([1, 2, 3])", expected: Object::Array(Rc::new(Array{elements: vec![Rc::new(Object::Int(2)), Rc::new(Object::Int(3))]}))},
             VMTestCase{input: "rest([])", expected: Object::Array(Rc::new(Array{elements: vec![]}))},
             VMTestCase{input: "push([], 1)", expected: Object::Array(Rc::new(Array{elements: vec![Rc::new(Object::Int(1))]}))},
+        ];
+
+        run_vm_tests(tests);
+    }
+
+    #[test]
+    fn closures() {
+        let tests = vec![
+            VMTestCase{
+                input: "
+                    let newClosure = fn(a) {
+                        fn() { a; };
+                    };
+                    let closure = newClosure(99);
+                    closure();",
+                expected: Object::Int(99),
+            },
+            VMTestCase{
+                input: "
+                    let newAdder = fn(a, b) {
+                        fn(c) { a + b + c };
+                    };
+                    let adder = newAdder(1, 2);
+                    adder(8);",
+                expected: Object::Int(11),
+            },
+            VMTestCase{
+                input: "
+                    let newAdder = fn(a, b) {
+                        let c = a + b;
+                        fn(d) { c + d };
+                    };
+                    let adder = newAdder(1, 2);
+                    adder(8);",
+                expected: Object::Int(11),
+            },
+            VMTestCase{
+                input: "
+                    let newAdderOuter = fn(a, b) {
+                        let c = a + b;
+                        fn(d) {
+                            let e = d + c;
+                            fn(f) { e + f; };
+                        };
+                    };
+                    let newAdderInner = newAdderOuter(1, 2)
+                    let adder = newAdderInner(3);
+                    adder(8);",
+                expected: Object::Int(14),
+            }
         ];
 
         run_vm_tests(tests);

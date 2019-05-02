@@ -20,6 +20,7 @@ pub enum Object {
     Hash(Rc<MonkeyHash>),
     Null,
     CompiledFunction(Rc<CompiledFunction>),
+    Closure(Rc<Closure>),
 }
 
 impl Object {
@@ -35,6 +36,7 @@ impl Object {
             Object::Hash(h) => h.inspect(),
             Object::Null => String::from("null"),
             Object::CompiledFunction(f) => f.inspect(),
+            Object::Closure(c) => c.inspect(),
         }
     }
 }
@@ -254,6 +256,20 @@ impl CompiledFunction {
 impl Hash for CompiledFunction {
     fn hash<H: Hasher>(&self, _state: &mut H) {
         panic!("hash for compiled function not supported")
+    }
+}
+
+#[derive(Eq, PartialEq, Debug)]
+pub struct Closure {
+    pub func: Rc<CompiledFunction>,
+    pub free: Vec<Rc<Object>>,
+}
+impl Closure {
+    fn inspect(&self) -> String { format!("Closure[{:?}]", self) }
+}
+impl Hash for Closure {
+    fn hash<H: Hasher>(&self, _state: &mut H) {
+        panic!("hash for closure not supported")
     }
 }
 

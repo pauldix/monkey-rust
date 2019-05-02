@@ -1,5 +1,4 @@
 use byteorder;
-
 use std::io::Cursor;
 use self::byteorder::{ByteOrder, BigEndian, WriteBytesExt, ReadBytesExt};
 
@@ -30,7 +29,8 @@ impl InstructionsFns for Instructions {
 
     fn fmt_instruction(op: &Op, operands: &Vec<usize>) -> String {
         match op.operand_widths().len() {
-            1 => format!("{} {}", op.name(), operands.first().unwrap()),
+            2 => format!("{} {} {}", op.name(), operands[0], operands[1]),
+            1 => format!("{} {}", op.name(), operands[0]),
             0 => format!("{}", op.name()),
             _ => panic!("unsuported operand width")
         }
@@ -68,6 +68,8 @@ pub enum Op {
     GetLocal,
     SetLocal,
     GetBuiltin,
+    Closure,
+    GetFree,
 }
 
 impl Op {
@@ -100,6 +102,8 @@ impl Op {
             Op::GetLocal => "OpGetLocal",
             Op::SetLocal => "OpSetLocal",
             Op::GetBuiltin => "OpGetBuiltin",
+            Op::Closure => "OpClosure",
+            Op::GetFree => "OpGetFree",
         }
     }
 
@@ -112,7 +116,8 @@ impl Op {
             Op::False | Op::Equal | Op::NotEqual |
             Op::GreaterThan | Op::Minus | Op::Bang | Op::Null |
             Op::Index | Op::ReturnValue | Op::Return => vec![],
-            Op::GetLocal | Op::SetLocal | Op::Call | Op::GetBuiltin => vec![1],
+            Op::GetLocal | Op::SetLocal | Op::Call | Op::GetBuiltin | Op::GetFree => vec![1],
+            Op::Closure => vec![2, 1],
         }
     }
 }
@@ -187,10 +192,16 @@ mod test {
     fn instructions_string() {
         let instructions = vec![
             make_instruction(Op::Add, &vec![]),
+            make_instruction(Op::GetLocal, &vec![1]),
             make_instruction(Op::Constant, &vec![2]),
             make_instruction(Op::Constant, &vec![65535]),
+            make_instruction(Op::Closure, &vec![65535, 255]),
         ];
-        let expected = "0000 OpAdd\n0001 OpConstant 2\n0004 OpConstant 65535\n";
+        let expected = "0000 OpAdd\n\
+                              0001 OpGetLocal 1\n\
+                              0003 OpConstant 2\n\
+                              0006 OpConstant 65535\n\
+                              0009 OpClosure 65535 255\n";
         let concatted = instructions.into_iter().flatten().collect::<Instructions>();
 
         assert_eq!(expected, concatted.string())

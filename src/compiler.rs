@@ -36,6 +36,7 @@ pub enum SymbolScope {
     Global,
     Local,
     Builtin,
+    Free,
 }
 
 #[derive(Eq, PartialEq, Debug, Clone)]
@@ -50,6 +51,7 @@ pub struct SymbolTable {
     outer: Option<Box<SymbolTable>>,
     store: HashMap<String, Rc<Symbol>>,
     num_definitions: usize,
+    free_symbols: Vec<Rc<Symbol>>,
 }
 
 impl SymbolTable {
@@ -58,6 +60,7 @@ impl SymbolTable {
             outer: None,
             store: HashMap::new(),
             num_definitions: 0,
+            free_symbols: vec![],
         }
     }
 
@@ -66,6 +69,7 @@ impl SymbolTable {
             outer: Some(Box::new(outer)),
             store: HashMap::new(),
             num_definitions: 0,
+            free_symbols: vec![],
         }
     }
 
@@ -94,11 +98,38 @@ impl SymbolTable {
 
     }
 
-    fn resolve(&self, name: &str) -> Option<Rc<Symbol>> {
+    fn define_free(&mut self, original: &Rc<Symbol>) -> Rc<Symbol> {
+        self.free_symbols.push(Rc::clone(original));
+
+        let symbol = Rc::new(Symbol{
+            name: original.name.clone(),
+            scope: SymbolScope::Free,
+            index: self.free_symbols.len() - 1,
+        });
+
+        self.store.insert(symbol.name.clone(), Rc::clone(&symbol));
+        symbol
+    }
+
+    fn resolve(&mut self, name: &str) -> Option<Rc<Symbol>> {
+        // TODO: clean this mess up
         match self.store.get(name) {
             Some(sym) => Some(Rc::clone(&sym)),
-            None => match &self.outer {
-                Some(outer) => outer.resolve(name),
+            None => match &mut self.outer {
+                Some(outer) => {
+                    match outer.resolve(name) {
+                        Some(sym) => {
+                            match sym.scope {
+                                SymbolScope::Global | SymbolScope::Builtin => Some(Rc::clone(&sym)),
+                                SymbolScope::Local | SymbolScope::Free => {
+                                    let free = self.define_free(&sym);
+                                    Some(free)
+                                }
+                            }
+                        },
+                        None => None,
+                    }
+                },
                 None => None,
             },
         }
@@ -223,6 +254,7 @@ impl Compiler {
                     SymbolScope::Global => self.emit(Op::SetGobal, &vec![symbol.index]),
                     SymbolScope::Local => self.emit(Op::SetLocal, &vec![symbol.index]),
                     SymbolScope::Builtin => return Err(CompileError{message: "can't assign to builtin function name".to_string()}),
+                    SymbolScope::Free => panic!("free not here"),
                 };
             },
         }
@@ -317,11 +349,7 @@ impl Compiler {
             ast::Expression::Identifier(name) => {
                 match self.symbol_table.resolve(name) {
                     Some(sym) => {
-                        match &sym.scope {
-                            SymbolScope::Global => self.emit(Op::GetGlobal, &vec![sym.index]),
-                            SymbolScope::Local => self.emit(Op::GetLocal, &vec![sym.index]),
-                            SymbolScope::Builtin => self.emit(Op::GetBuiltin, &vec![sym.index]),
-                        };
+                        self.load_symbol(&sym);
                     },
                     _ => panic!("symbol not resolved {:?}", name)
                 }
@@ -363,12 +391,17 @@ impl Compiler {
                     self.emit(Op::Return, &vec![]);
                 }
 
+                let free_symbols = self.symbol_table.free_symbols.clone();
                 let num_locals = self.symbol_table.num_definitions;
-
                 let instructions = self.leave_scope();
+
+                for sym in &free_symbols {
+                    self.load_symbol(sym);
+                }
+
                 let compiled_func = Object::CompiledFunction(Rc::new(CompiledFunction{instructions, num_locals, num_parameters: func.parameters.len()}));
-                let const_pos= self.add_constant(compiled_func);
-                self.emit(Op::Constant, &vec![const_pos]);
+                let func_index= self.add_constant(compiled_func);
+                self.emit(Op::Closure, &vec![func_index, free_symbols.len()]);
             },
             ast::Expression::Call(exp) => {
                 self.eval_expression(&exp.function);
@@ -383,6 +416,15 @@ impl Compiler {
         }
 
         Ok(())
+    }
+
+    fn load_symbol(&mut self, symbol: &Rc<Symbol>) {
+        match &symbol.scope {
+            SymbolScope::Global => self.emit(Op::GetGlobal, &vec![symbol.index]),
+            SymbolScope::Local => self.emit(Op::GetLocal, &vec![symbol.index]),
+            SymbolScope::Builtin => self.emit(Op::GetBuiltin, &vec![symbol.index]),
+            SymbolScope::Free => self.emit(Op::GetFree, &vec![symbol.index]),
+        };
     }
 
     fn replace_last_pop_with_return(&mut self) {
@@ -948,7 +990,7 @@ mod test {
                     ]), num_locals: 0, num_parameters: 0})),
                 ],
                 expected_instructions: vec![
-                    make_instruction(Op::Constant, &vec![2]),
+                    make_instruction(Op::Closure, &vec![2, 0]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
             },
@@ -970,7 +1012,7 @@ mod test {
                     ]), num_locals: 0, num_parameters: 0})),
                 ],
                 expected_instructions: vec![
-                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Closure, &vec![1, 0]),
                     make_instruction(Op::Call, &vec![0]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
@@ -985,7 +1027,7 @@ mod test {
                     ]), num_locals: 0, num_parameters: 0})),
                 ],
                 expected_instructions: vec![
-                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Closure, &vec![1, 0]),
                     make_instruction(Op::SetGobal, &vec![0]),
                     make_instruction(Op::GetGlobal, &vec![0]),
                     make_instruction(Op::Call, &vec![0]),
@@ -1002,7 +1044,7 @@ mod test {
                     Object::Int(24),
                 ],
                 expected_instructions: vec![
-                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Closure, &vec![0, 0]),
                     make_instruction(Op::SetGobal, &vec![0]),
                     make_instruction(Op::GetGlobal, &vec![0]),
                     make_instruction(Op::Constant, &vec![1]),
@@ -1026,7 +1068,7 @@ mod test {
                     Object::Int(26),
                 ],
                 expected_instructions: vec![
-                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Closure, &vec![0, 0]),
                     make_instruction(Op::SetGobal, &vec![0]),
                     make_instruction(Op::GetGlobal, &vec![0]),
                     make_instruction(Op::Constant, &vec![1]),
@@ -1139,7 +1181,7 @@ mod test {
                 expected_instructions: vec![
                     make_instruction(Op::Constant, &vec![0]),
                     make_instruction(Op::SetGobal, &vec![0]),
-                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Closure, &vec![1, 0]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
             },
@@ -1155,7 +1197,7 @@ mod test {
                     ]), num_locals: 1, num_parameters: 0})),
                 ],
                 expected_instructions: vec![
-                    make_instruction(Op::Constant, &vec![1]),
+                    make_instruction(Op::Closure, &vec![1, 0]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
             },
@@ -1176,7 +1218,7 @@ mod test {
                     ]), num_locals: 2, num_parameters: 0})),
                 ],
                 expected_instructions: vec![
-                    make_instruction(Op::Constant, &vec![2]),
+                    make_instruction(Op::Closure, &vec![2, 0]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
             },
@@ -1229,14 +1271,14 @@ mod test {
         nested_local.define("e");
         nested_local.define("f");
 
-        let tests = vec![
-            (&local, vec![
+        let mut tests = vec![
+            (local, vec![
                 ("a", SymbolScope::Global, 0),
                 ("b", SymbolScope::Global, 1),
                 ("c", SymbolScope::Local, 0),
                 ("d", SymbolScope::Local, 1),
             ]),
-            (&nested_local, vec![
+            (nested_local, vec![
                 ("a", SymbolScope::Global, 0),
                 ("b", SymbolScope::Global, 1),
                 ("e", SymbolScope::Local, 0),
@@ -1244,14 +1286,14 @@ mod test {
             ]),
         ];
 
-        for (table, expected) in tests {
+        for (table, expected) in &mut tests {
             for (name, scope, index) in expected {
                 match table.resolve(name) {
                     Some(symbol) => {
-                        if symbol.scope != scope {
+                        if symbol.scope != *scope {
                             panic!("expected scope {:?} on symbol {:?} but got {:?}", scope, name, symbol.scope);
                         }
-                        if symbol.index != index {
+                        if symbol.index != *index {
                             panic!("expected index {} on symbol {:?} but got {}", index, symbol, symbol.index);
                         }
                     },
@@ -1290,7 +1332,7 @@ mod test {
                     ]), num_locals: 0, num_parameters: 0})),
                 ],
                 expected_instructions: vec![
-                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::Closure, &vec![0, 0]),
                     make_instruction(Op::Pop, &vec![]),
                 ],
             }
@@ -1316,7 +1358,7 @@ mod test {
         let first_local = SymbolTable::new_enclosed_symbol_table(global.clone());
         let second_local = SymbolTable::new_enclosed_symbol_table(first_local.clone());
 
-        for table in vec![global, first_local, second_local] {
+        for mut table in vec![global, first_local, second_local] {
             for sym in &expected {
                 match table.resolve(&sym.name) {
                     Some(s) => if s != Rc::new(sym.clone()) {
@@ -1324,6 +1366,213 @@ mod test {
                     },
                     None => panic!("couldn't resolve symbol {}", sym.name),
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn closures() {
+        let tests = vec![
+            CompilerTestCase{
+                input: "
+                    fn(a) {
+                        fn(b) {
+                            a + b
+                        }
+                    }",
+                expected_constants: vec![
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::GetFree, &vec![0]),
+                        make_instruction(Op::GetLocal, &vec![0]),
+                        make_instruction(Op::Add, &vec![]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ]), num_locals: 1, num_parameters: 1})),
+                ],
+                expected_instructions: vec![
+                    make_instruction(Op::Closure, &vec![1, 0]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "
+                    fn(a) {
+                        fn(b) {
+                            fn(c) {
+                                a + b + c
+                            }
+                        }
+                    };",
+                expected_constants: vec![
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::GetFree, &vec![0]),
+                        make_instruction(Op::GetFree, &vec![1]),
+                        make_instruction(Op::Add, &vec![]),
+                        make_instruction(Op::GetLocal, &vec![0]),
+                        make_instruction(Op::Add, &vec![]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ]), num_locals: 1, num_parameters: 1})),
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::GetFree, &vec![0]),
+                        make_instruction(Op::GetLocal, &vec![0]),
+                        make_instruction(Op::Closure, &vec![0, 2]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ]), num_locals: 1, num_parameters: 1})),
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::GetLocal, &vec![0]),
+                        make_instruction(Op::Closure, &vec![1, 1]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ]), num_locals: 1, num_parameters: 1})),
+                ],
+                expected_instructions: vec![
+                    make_instruction(Op::Closure, &vec![2, 0]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+            CompilerTestCase{
+                input: "
+                    let global = 55;
+
+                    fn() {
+                        let a = 66;
+
+                        fn() {
+                            let b = 77;
+
+                            fn() {
+                                let c = 88;
+
+                                global + a + b + c;
+                            }
+                        }
+                    }",
+                expected_constants: vec![
+                    Object::Int(55),
+                    Object::Int(66),
+                    Object::Int(77),
+                    Object::Int(88),
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::Constant, &vec![3]),
+                        make_instruction(Op::SetLocal, &vec![0]),
+                        make_instruction(Op::GetGlobal, &vec![0]),
+                        make_instruction(Op::GetFree, &vec![0]),
+                        make_instruction(Op::Add, &vec![]),
+                        make_instruction(Op::GetFree, &vec![1]),
+                        make_instruction(Op::Add, &vec![]),
+                        make_instruction(Op::GetLocal, &vec![0]),
+                        make_instruction(Op::Add, &vec![]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ]), num_locals: 1, num_parameters: 0})),
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::Constant, &vec![2]),
+                        make_instruction(Op::SetLocal, &vec![0]),
+                        make_instruction(Op::GetFree, &vec![0]),
+                        make_instruction(Op::GetLocal, &vec![0]),
+                        make_instruction(Op::Closure, &vec![4, 2]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ]), num_locals: 1, num_parameters: 0})),
+                    Object::CompiledFunction(Rc::new(CompiledFunction{instructions: concat_instructions(&vec![
+                        make_instruction(Op::Constant, &vec![1]),
+                        make_instruction(Op::SetLocal, &vec![0]),
+                        make_instruction(Op::GetLocal, &vec![0]),
+                        make_instruction(Op::Closure, &vec![5, 1]),
+                        make_instruction(Op::ReturnValue, &vec![]),
+                    ]), num_locals: 1, num_parameters: 0})),
+                ],
+                expected_instructions: vec![
+                    make_instruction(Op::Constant, &vec![0]),
+                    make_instruction(Op::SetGobal, &vec![0]),
+                    make_instruction(Op::Closure, &vec![6, 0]),
+                    make_instruction(Op::Pop, &vec![]),
+                ],
+            },
+        ];
+
+        run_compiler_tests(tests);
+    }
+
+    #[test]
+    fn resolve_free() {
+        let mut global = SymbolTable::new();
+        global.define("a");
+        global.define("b");
+
+        let mut first_local = SymbolTable::new_enclosed_symbol_table(global.clone());
+        first_local.define("c");
+        first_local.define("d");
+
+        let mut second_local = SymbolTable::new_enclosed_symbol_table(first_local.clone());
+        second_local.define("e");
+        second_local.define("f");
+
+        let mut tests = vec![
+            (first_local, vec![
+                Symbol{name: "a".to_string(), scope: SymbolScope::Global, index: 0},
+                Symbol{name: "b".to_string(), scope: SymbolScope::Global, index: 1},
+                Symbol{name: "c".to_string(), scope: SymbolScope::Local, index: 0},
+                Symbol{name: "d".to_string(), scope: SymbolScope::Local, index: 1},
+            ], vec![]),
+            (second_local, vec![
+                Symbol{name: "a".to_string(), scope: SymbolScope::Global, index: 0},
+                Symbol{name: "b".to_string(), scope: SymbolScope::Global, index: 1},
+                Symbol{name: "c".to_string(), scope: SymbolScope::Free, index: 0},
+                Symbol{name: "d".to_string(), scope: SymbolScope::Free, index: 1},
+                Symbol{name: "e".to_string(), scope: SymbolScope::Local, index: 0},
+                Symbol{name: "f".to_string(), scope: SymbolScope::Local, index: 1},
+            ], vec![
+                Symbol{name: "c".to_string(), scope: SymbolScope::Local, index: 0},
+                Symbol{name: "d".to_string(), scope: SymbolScope::Local, index: 1},
+            ]),
+        ];
+
+        for mut t in &mut tests {
+            let (table, expected_symbols, expected_free_symbols) = &mut t;
+
+            for exp in expected_symbols.clone() {
+                match table.resolve(&exp.name) {
+                    Some(got) => assert_eq!(exp, *got),
+                    None => panic!("name {} not resolvable", exp.name),
+                }
+            }
+
+            assert_eq!(table.free_symbols.len(), expected_free_symbols.len());
+            let mut i = 0;
+            for exp in expected_free_symbols {
+                let got = (*table.free_symbols[i]).borrow();
+                assert_eq!(*exp, *got);
+                i += 1;
+            }
+        }
+    }
+
+    #[test]
+    fn resolve_unresolvable_free() {
+        let mut global = SymbolTable::new();
+        global.define("a");
+
+        let mut first_local = SymbolTable::new_enclosed_symbol_table(global);
+        first_local.define("c");
+
+        let mut second_local = SymbolTable::new_enclosed_symbol_table(first_local);
+        second_local.define("e");
+        second_local.define("f");
+
+        let expected = vec![
+            Symbol{name: "a".to_string(), scope: SymbolScope::Global, index: 0},
+            Symbol{name: "c".to_string(), scope: SymbolScope::Free, index: 0},
+            Symbol{name: "e".to_string(), scope: SymbolScope::Local, index: 0},
+            Symbol{name: "f".to_string(), scope: SymbolScope::Local, index: 1},
+        ];
+
+        for exp in &expected {
+            match second_local.resolve(&exp.name) {
+                Some(got) => assert_eq!(exp, got.borrow()),
+                None => panic!("name {} not resolvable", exp.name),
+            }
+        }
+
+        for name in vec!["b", "d"] {
+            if let Some(_) = second_local.resolve(name) {
+                panic!("name {} resolved but was not expected to", name);
             }
         }
     }
@@ -1375,7 +1624,7 @@ mod test {
                     return Err(CompileError{message: format!("constant {}, exp: {} got: {}", pos, exp, got)})
                 },
                 (Object::CompiledFunction(exp), Object::CompiledFunction(got)) => if exp != got {
-                    return Err(CompileError{message: format!("constant {}, exp: {:?} got: {:?}", pos, exp, got)})
+                    return Err(CompileError{message: format!("constant {}, exp: {:?} got: {:?}, instructions exp:\n{}\ngot\n{}", pos, exp, got, exp.instructions.string(), got.instructions.string())})
                 },
                 _ => panic!("can't compare objects: exp: {:?} got: {:?}", exp, got)
             }
