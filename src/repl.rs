@@ -1,13 +1,15 @@
 use std::io;
-use std::cell::RefCell;
-use std::rc::Rc;
-use parser;
-use evaluator;
-use object::Environment;
+use crate::parser;
+use crate::compiler::{Compiler, SymbolTable};
+use crate::vm;
 
 pub fn start<R: io::BufRead, W: io::Write>(mut reader: R, mut writer: W) -> io::Result<()> {
     #![allow(warnings)]
-    let mut env = Rc::new(RefCell::new(Environment::new()));
+    let mut constants = vec![];
+    let mut globals = vm::VM::new_globals();
+    let mut symbol_table = SymbolTable::new();
+    symbol_table.load_builtins();
+
     loop {
         writer.write(b"> ");
         writer.flush();
@@ -16,10 +18,22 @@ pub fn start<R: io::BufRead, W: io::Write>(mut reader: R, mut writer: W) -> io::
 
         match parser::parse(&line) {
             Ok(node) => {
-                match evaluator::eval(&node, Rc::clone(&env)) {
-                    Ok(n) => write!(writer, "{}\n", n.inspect()),
-                    Err(e) => write!(writer, "error: {}\n", e.message),
-                };
+                let mut compiler = Compiler::new_with_state(symbol_table, constants);
+
+                match compiler.compile(node) {
+                    Ok(bytecode) => {
+                        let mut vm = vm::VM::new_with_global_store(&compiler.constants, compiler.current_instructions().clone(), globals);
+                        vm.run();
+                        write!(writer, "{:?}\n", vm.last_popped_stack_elem().unwrap().inspect());
+                        globals = vm.globals;
+                    },
+                    Err(e) => {
+                        write!(writer, "error: {}\n", e.message);
+                    },
+                }
+
+                symbol_table = compiler.symbol_table;
+                constants = compiler.constants;
             },
             Err(errors) => {
                 for err in errors {

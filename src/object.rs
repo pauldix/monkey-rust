@@ -3,7 +3,10 @@ use std::collections::HashMap;
 use std::hash::{Hash,Hasher};
 use std::cell::RefCell;
 use std::rc::Rc;
-use ast;
+use crate::ast;
+use crate::code;
+use code::InstructionsFns;
+use enum_iterator::IntoEnumIterator;
 
 #[derive(Hash, Eq, PartialEq, Clone, Debug)]
 pub enum Object {
@@ -16,6 +19,8 @@ pub enum Object {
     Array(Rc<Array>),
     Hash(Rc<MonkeyHash>),
     Null,
+    CompiledFunction(Rc<CompiledFunction>),
+    Closure(Rc<Closure>),
 }
 
 impl Object {
@@ -30,11 +35,13 @@ impl Object {
             Object::Array(a) => a.inspect(),
             Object::Hash(h) => h.inspect(),
             Object::Null => String::from("null"),
+            Object::CompiledFunction(f) => f.inspect(),
+            Object::Closure(c) => c.inspect(),
         }
     }
 }
 impl fmt::Display for Object {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.inspect())
     }
 }
@@ -56,7 +63,7 @@ impl Hash for MonkeyHash {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Eq, PartialEq, Clone, Debug)]
 pub struct Array {
     pub elements: Vec<Rc<Object>>,
 }
@@ -67,13 +74,7 @@ impl Array {
         format!("[{}]", elements.join(", "))
     }
 }
-impl PartialEq for Array {
-    fn eq(&self, _other: &Array) -> bool {
-        // TODO: implment this later, but this shouldn't get used right now
-        panic!("eq not implemented for array");
-    }
-}
-impl Eq for Array {}
+
 impl Hash for Array {
     fn hash<H: Hasher>(&self, _state: &mut H) {
         // we should never hash an array so should be fine
@@ -81,14 +82,15 @@ impl Hash for Array {
     }
 }
 
-#[derive(Hash, Eq, PartialEq, Clone, Debug)]
+#[repr(u8)]
+#[derive(Hash, Eq, PartialEq, Clone, Debug, IntoEnumIterator, Copy)]
 pub enum Builtin {
     Len,
+    Puts,
     First,
     Last,
     Rest,
     Push,
-    Puts,
 }
 
 impl Builtin {
@@ -196,6 +198,10 @@ impl Builtin {
         }
     }
 
+    pub fn string(&self) -> String {
+        self.inspect()
+    }
+
     fn inspect(&self) -> String {
         match self {
             Builtin::Len => "len".to_string(),
@@ -232,6 +238,38 @@ impl Hash for Function {
     fn hash<H: Hasher>(&self, _state: &mut H) {
         // we should never hash an array so should be fine
         panic!("hash for function not supported");
+    }
+}
+
+#[derive(Eq, PartialEq, Clone, Debug)]
+pub struct CompiledFunction {
+    pub instructions: code::Instructions,
+    pub num_locals: usize,
+    pub num_parameters: usize,
+}
+
+impl CompiledFunction {
+    fn inspect(&self) -> String {
+        format!("CompiledFunction[{}]", self.instructions.string())
+    }
+}
+impl Hash for CompiledFunction {
+    fn hash<H: Hasher>(&self, _state: &mut H) {
+        panic!("hash for compiled function not supported")
+    }
+}
+
+#[derive(Eq, PartialEq, Debug)]
+pub struct Closure {
+    pub func: Rc<CompiledFunction>,
+    pub free: Vec<Rc<Object>>,
+}
+impl Closure {
+    fn inspect(&self) -> String { format!("Closure[{:?}]", self) }
+}
+impl Hash for Closure {
+    fn hash<H: Hasher>(&self, _state: &mut H) {
+        panic!("hash for closure not supported")
     }
 }
 

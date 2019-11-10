@@ -4,5 +4,8 @@ version = "0.1.0"
 authors = ["Paul Dix <paul@pauldix.net>"]
 description = "A rust implementation of Thorsten Ball's Monkey programming language."
 license = "MIT"
+edition = "2018"
 
 [dependencies]
+byteorder = "1"
+enum-iterator = "0.3.0"
